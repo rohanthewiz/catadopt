@@ -1,0 +1,74 @@
+# xcodegen spec — generates GrMobApp.xcodeproj (which stays untracked; this
+# file is the source of truth). Regenerate after changing it:
+#   brew install xcodegen   # once
+#   cd ios && xcodegen generate
+name: GrMobApp
+options:
+  bundleIdPrefix: com.grmob
+  deploymentTarget:
+    iOS: "17.0" # floor set by the runtime's use of @Observable + containerRelativeFrame
+settings:
+  SWIFT_VERSION: "5.9"
+targets:
+  GrMobApp:
+    type: application
+    platform: iOS
+    sources:
+      - GrMob
+    dependencies:
+      # gomobile emits a static xcframework, so it links in; nothing to embed.
+      - framework: Frameworks/GrMob.xcframework
+        embed: false
+    info:
+      path: GrMob/Info.plist
+      properties:
+        CFBundleDisplayName: "Cat Adoption"
+        UILaunchScreen: {} # system default launch screen; without it iOS letterboxes the app
+        # core's audio service: without the audio background mode the
+        # stream stops the moment the app leaves the foreground, whatever
+        # the audio session category says. See App/AudioPlayer.swift.
+        UIBackgroundModes: [audio]
+        # The inbound half of core.OpenURL: the scheme this app claims, so the
+        # OS hands it com.rohanthewiz.catadopt:// links. SwiftUI's .onOpenURL (GrMobApp.swift)
+        # forwards them to Go as the "deeplink" host event; core/deeplink.go
+        # carries the contract and why the shell does not parse the URL.
+        #
+        # A private scheme rather than a Universal Link, deliberately: a
+        # Universal Link is verified against an apple-app-site-association
+        # file served from a domain, which is a deployment an adopting app owns
+        # and this framework shell cannot have. An app shipping to users adds
+        # its own verified https association beside this rather than instead of
+        # it — a custom scheme is claimable by any other app, so it is a
+        # convenience and not a trust boundary.
+        #
+        # It is also how a simulator run reaches a screen without scrolling to
+        # it:
+        #   xcrun simctl openurl booted "com.rohanthewiz.catadopt://"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.rohanthewiz.catadopt.deeplink
+            CFBundleURLSchemes: [com.rohanthewiz.catadopt]
+        # Development only: lets the simulator talk to a server on the Mac
+        # over plain http (the church app's API_BASE=http://localhost:8088
+        # build, and AVPlayer streaming its /sermon-audio URLs). ATS still
+        # requires TLS for every non-local host.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Go's permission package (App/Permissions.swift). These are not
+        # optional documentation: iOS *crashes* the app when a prompt would
+        # appear and its usage-description key is absent, so a shell that
+        # ships permission.Request without them fails at the one moment it is
+        # being exercised. One key per Permission constant.
+        NSCameraUsageDescription: "Cat Adoption uses the camera when you allow it."
+        NSMicrophoneUsageDescription: "Cat Adoption uses the microphone when you allow it."
+        NSLocationWhenInUseUsageDescription: "Cat Adoption uses your location when you allow it."
+        NSPhotoLibraryUsageDescription: "Cat Adoption uses your photo library when you allow it."
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.rohanthewiz.catadopt
+      # gomobile's generated glue is Objective-C; the app is Swift-only, but
+      # linking Go's runtime archive wants the ObjC linker flag.
+      OTHER_LDFLAGS: -ObjC
+schemes:
+  GrMobApp:
+    build:
+      targets:
+        GrMobApp: all

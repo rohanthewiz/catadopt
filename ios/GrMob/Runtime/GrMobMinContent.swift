@@ -1,0 +1,529 @@
+import CoreGraphics
+import CoreText
+import Foundation
+import Observation
+import SwiftUI
+
+/// CSS min-content width, computed over the node tree.
+///
+/// # Why this is computed and not measured
+///
+/// Every CSS flex item carries `min-width: auto`, which floors it at its own
+/// min-content size, and that floor is why an overflowing row on the web
+/// overflows rather than grinding its children down to nothing. GrMobFlexSolver
+/// needs the floor as a number, one per child.
+///
+/// The obvious way to get it on this host is to ask the view: SwiftUI
+/// documents `ProposedViewSize.zero` as the way to request a subview's
+/// minimum. That was tried first and it does not work, and the reason is not a
+/// detail — a SwiftUI `Text` ACCEPTS any width it is proposed and wraps or
+/// truncates to fit, so `sizeThatFits(.zero)` on the tutorial's lesson number
+/// reports a width of exactly 0.0. Measured on a simulator:
+///
+///     [GRMOBMIN] axis=horizontal i=0 zero=0.0 base=21.0
+///
+/// A view that answers "zero" to "how small can you be" has no minimum to
+/// report, so there is nothing to read out of the view layer at all. What
+/// there is instead is the node: a `core.Text` carries its string and its
+/// style, and CSS's min-content of a run of text is a function of those two.
+/// So this walks the tree and measures the text itself.
+///
+/// # What min-content is
+///
+/// The width of the widest UNBREAKABLE run — the widest piece the line breaker
+/// cannot split. For "Rows, Columns & spacing" that is "Columns"; for "4.12",
+/// which has no break opportunity in it at all, it is the whole string, which
+/// is why a row number is its own minimum and was the shape that exposed the
+/// missing floor.
+///
+/// Containers compose the way CSS says: a row's min-content is the sum of its
+/// children's plus its gaps (they all sit on one line), a column's is the
+/// widest of its children's (they sit on separate ones).
+///
+/// # Every place this deliberately under-estimates
+///
+/// A floor that is too LOW can only leave a child as crushable as it was
+/// before this file existed. A floor that is too HIGH makes a line overflow
+/// that a browser would have fitted, which is a visible defect this host would
+/// own alone. So every unknown here resolves downwards:
+///
+///   a declared main size    floors at 0. CSS's automatic minimum size is
+///                           min(specified size suggestion, content size
+///                           suggestion) — a declared width is a CEILING on
+///                           the minimum, not a floor — and an empty
+///                           `Box(Width("60px"))` therefore floors at 0 in a
+///                           browser, which is the column internal/pinfixture
+///                           records and wasm/verify has watched Chrome
+///                           produce. A Canvas and an Image with a source are
+///                           the exceptions, being replaced elements on the
+///                           web; see width(of:).
+///
+///   a border                not added. It is drawn as an overlay here
+///                           (grMobBorder strokes the shape rather than
+///                           insetting it), so unlike padding and margin it is
+///                           not in the base size the floor is compared
+///                           against, and adding it would be measuring
+///                           something the rest of the arithmetic does not
+///                           carry.
+///
+///   every node type that    floors at 0 — inputs, images, maps. Each has a
+///   is not text, a button   min-content size in CSS and none of them is a
+///   or a plain container    function of a string, so each would need its
+///                           own measurement. Text is where the divergence was
+///                           found and where it bites, being the only leaf
+///                           whose whole business is to be narrower than it
+///                           wants to be.
+///
+///   a Button                floors at its label's widest word plus the
+///                           padding GrMobButton draws, which IS a function of
+///                           a string. It used to floor at 0 with the others,
+///                           and lesson 2.6 showed the cost: a Save button
+///                           beside a caption that overflowed its row was the
+///                           child the solver squeezed, and its label wrapped
+///                           as "Sav / e". A browser floors a <button> at its
+///                           min-content the same way and squeezes the caption.
+///
+///   the column axis         not measured here. A text's min-content HEIGHT
+///                           is a function of the width it is laid out at,
+///                           which a tree walk does not know — but the flex
+///                           layout measures exactly that as the child's base
+///                           size. So for a Column this file only decides
+///                           WHETHER a child floors at its base
+///                           (floorsHeightAtContent) and the layout supplies
+///                           the number. The verdict keeps the same bias:
+///                           every child it is unsure of floors at zero.
+enum GrMobMinContent {
+
+    /// The min-content width of a node, in points.
+    ///
+    /// Recursive, and the recursion is the point: a floor that stopped at the
+    /// first container would be a floor that silently does nothing one level
+    /// down, which is the same class of quiet divergence from CSS this exists
+    /// to close.
+    static func width(of node: GrMobNode) -> CGFloat {
+        // A declared width caps the minimum rather than raising it; see the
+        // under-estimate table above. A percentage is a declaration too — it
+        // resolves against the container, which is the thing being sized.
+        //
+        // Except a Canvas with a px width. On the web a canvas is an <svg>, a
+        // replaced element, and a replaced element's content size suggestion
+        // is its natural size — 300px for an <svg> with no width attribute,
+        // which htmlout's never has — so its minimum is min(declared, 300)
+        // rather than 0. Chrome keeps a Canvas(Width("110px")) at 110 beside
+        // a long caption, Compose keeps it too, and flooring it at 0 here let
+        // the row squeeze the box while the drawing kept its size and spilled
+        // over the caption.
+        //
+        // An Image with a src is an <img>, the other replaced element the web
+        // targets write, and its content size suggestion is its natural width
+        // — transferred through its natural aspect ratio when a height is
+        // declared. Measured in headless Chrome, a flex item Width 110px ×
+        // Height 40px beside an unbreakable word:
+        //
+        //   400 × 100 image   floors at 110   (40 · 4 = 160, capped at 110)
+        //    50 ×  50 image   floors at  40   (40 · 1)
+        //   failed to load    floors at 110
+        //   no src            floors at   0   (htmlout writes a <div>)
+        //
+        // The node never carries a natural size, so it comes from the image
+        // itself once GrMobImage has decoded it (GrMobImageSizes, recorded
+        // by src). Until then, while it loads and if it fails, the floor is
+        // the declared width, which is Chrome's answer for an image still
+        // loading and for a failed one (the 110 above). Once the size is
+        // known the floor is CSS's min(declared, content size suggestion),
+        // imageFloor below. Flooring every image at 0 instead let SwiftUI
+        // squeeze it whatever its proportions, the Canvas bug again. A
+        // MapView is a <div> on the web and stays at 0.
+        if let s = node.style, !s.width.isEmpty {
+            if node.type == "Canvas", let w = GrMobMaxWidth.fixedLimit(s.width) {
+                return min(w, 300) + CGFloat(s.margin.left + s.margin.right)
+            }
+            if isReplacedImage(node), let w = GrMobMaxWidth.fixedLimit(s.width) {
+                return imageFloor(declared: w, height: s.height,
+                                  natural: GrMobImageSizes.shared.size(for: node.stringProp("src")))
+                    + CGFloat(s.margin.left + s.margin.right)
+            }
+            return 0
+        }
+
+        let inner: CGFloat
+        switch node.type {
+        case "Text":
+            // A capped Text truncates instead of overflowing, and CSS gives
+            // the box that does it (overflow:hidden) an automatic minimum of
+            // zero. Flooring it at its widest word here would widen the very
+            // slot core.MaxLines exists to keep a label inside.
+            if (node.style?.maxLines ?? 0) > 0 { return 0 }
+            inner = textWidth(node.stringProp("content"), style: node.style)
+        case "Paragraph":
+            // core.Paragraph wraps like a Text, so it floors like one: at its
+            // widest word, measured over the runs' text joined in run order
+            // (a word can straddle two runs, "re" + "run"), in the base font.
+            // A bold or monospace run is a little wider than that measure; the
+            // floor is a minimum, and a word a few points past it wraps
+            // inside its run as it would in a browser.
+            if (node.style?.maxLines ?? 0) > 0 { return 0 }
+            let runs = node.props["runs"] as? [[String: Any]] ?? []
+            inner = textWidth(runs.map { $0["t"] as? String ?? "" }.joined(), style: node.style)
+        // A row lays its children out on one line, so its minimum is all of
+        // theirs plus the gaps, which do not shrink. `horizontalGap` is the
+        // same read GrMobFlexStack makes for the same axis.
+        case "Row":
+            let gaps = CGFloat(max(node.children.count - 1, 0)) * (node.style?.horizontalGap ?? 0)
+            inner = node.children.reduce(gaps) { $0 + width(of: $1) }
+        // A column stacks them, so its minimum is the widest one. Card and Box
+        // render through GrMobColumn and are the same shape; Fragment and
+        // Theme place nothing of their own and pass their children through, so
+        // the widest child is theirs too.
+        case "Column", "Card", "Box", "Fragment", "Theme":
+            inner = node.children.reduce(0) { max($0, width(of: $1)) }
+        case "Button":
+            return buttonWidth(node)
+        default:
+            return 0
+        }
+        // A node with nothing to measure inside it has no minimum to speak of,
+        // and adding its padding to zero would floor an empty Box at its own
+        // insets — which is not what a browser does with one.
+        guard inner > 0 else { return 0 }
+        return capped(inner, node.style) + outerInsets(node.style)
+    }
+
+    /// Whether a node is an `<img>` on the web targets: an Image with a src.
+    /// htmlout writes a src-less Image as a `<div>`, which is not a replaced
+    /// element and has no natural size. FlexChildren asks the same question
+    /// to decide whether the image's Width may be squeezed (GrMobGrow
+    /// .squeezesWidth), so the floor and the frame agree about which images
+    /// are replaced.
+    static func isReplacedImage(_ node: GrMobNode) -> Bool {
+        node.type == "Image" && !node.stringProp("src").isEmpty
+    }
+
+    /// CSS's automatic minimum width for an image whose declared width is
+    /// `declared` points: `min(specified size suggestion, content size
+    /// suggestion)` (css-flexbox-1 §4.5). The specified suggestion is the
+    /// declared width. The content suggestion is the natural width, or, when
+    /// the height is declared in points, the natural aspect ratio carried
+    /// through that height. Natural sizes are in CSS px, which for an
+    /// `<img>` with no srcset is the bitmap's pixel size, and that is what
+    /// GrMobImageSizes records.
+    ///
+    /// ```
+    ///   box 110 × 40      natural      content suggestion   floor
+    ///   ------------      -------      ------------------   -----
+    ///                     400 × 100    40 · 4   = 160       110
+    ///                      50 ×  50    40 · 1   =  40        40
+    ///                     unknown      (loading or failed)  110
+    ///   box 110 × auto     50 ×  30    50                    50
+    /// ```
+    ///
+    /// The first three rows are headless Chrome's measurements (see
+    /// width(of:)). The last is the same rule with no height to carry the
+    /// ratio through. A natural size with a zero side (a decoder that
+    /// answered nothing) counts as unknown, so the floor stays high: the
+    /// table's bias.
+    static func imageFloor(declared: CGFloat, height: String, natural: CGSize?) -> CGFloat {
+        guard let natural, natural.width > 0, natural.height > 0 else { return declared }
+        let content: CGFloat
+        // fixedLimit answers points only: nil for "", "auto" and a
+        // percentage, none of which is a definite height to carry through.
+        if let h = GrMobMaxWidth.fixedLimit(height) {
+            content = h * natural.width / natural.height
+        } else {
+            content = natural.width
+        }
+        return min(declared, content)
+    }
+
+    /// A Button's min-content width: its label's widest word, inside the
+    /// padding GrMobButton draws around it, plus its margin.
+    ///
+    /// Its own function because a Button's box is not grMobBox's. GrMobButton
+    /// puts the padding inside the pressable control and falls back to 16
+    /// points a side when core gave none (its paddingOrDefault), so
+    /// outerInsets, which reads the style's padding as written, would floor a
+    /// default button 32 points narrower than it draws. The border is left out
+    /// for outerInsets' reason: GrMobButtonStyle strokes it inside the shape,
+    /// so it adds nothing to the size.
+    ///
+    /// The MaxWidth clamp is capped()'s rule, over the same border box, so a
+    /// capped button whose label overflows it does not hold its row open.
+    private static func buttonWidth(_ node: GrMobNode) -> CGFloat {
+        let label = textWidth(node.stringProp("label"), style: node.style)
+        // An icon-only button (no label) keeps the old floor of zero: there is
+        // no string here to measure, and zero is the safe direction.
+        guard label > 0 else { return 0 }
+        let s = node.style
+        let written = s?.padding ?? .zero
+        let padding = written == .zero ? 32 : CGFloat(written.left + written.right)
+        var box = label + padding
+        if let cap = GrMobMaxWidth.fixedLimit(s?.maxWidth ?? "") { box = min(box, cap) }
+        return box + CGFloat((s?.margin.left ?? 0) + (s?.margin.right ?? 0))
+    }
+
+    /// Whether a Column child's automatic minimum height is its content
+    /// height (CSS `min-height: auto` on a column flex item) rather than zero.
+    ///
+    /// With no floor, a Column offered less height than its children need
+    /// shrinks every one of them below its content, and SwiftUI draws a
+    /// squeezed Text at its full height anyway, so its lines overlap the next
+    /// sibling. A browser keeps each child whole and lets the column overflow,
+    /// and Compose's Column measures children in order and never squeezes a
+    /// Text below its lines either. A DatePicker's day-marker dots drawn over
+    /// their numbers in a squeezed sheet was this.
+    ///
+    /// The answer is yes only where the base size the layout measures IS the
+    /// CSS floor, and no wherever that is in doubt — the width walk's bias, for
+    /// the width walk's reason: a floor too high overflows a column a browser
+    /// would have fitted.
+    ///
+    /// ```
+    ///   rule (first match wins)        floor  why
+    ///   -----------------------        -----  ---
+    ///   Overflow other than visible    no     CSS: a scroll container's
+    ///                                         automatic minimum is zero
+    ///   a scrolling node type          no     the same rule, even with a
+    ///                                         points Height
+    ///   Height in points               yes    a rigid frame: the base is the
+    ///                                         declared size, and so is CSS's
+    ///                                         min(specified, content) whenever
+    ///                                         the content is taller
+    ///   any other Height ("50%")       no     resolves against the column
+    ///                                         being sized
+    ///   Text, Paragraph, Button,       yes    the base is their lines (a
+    ///   Spacer                                Spacer's is empty)
+    ///   Row/Column/Card/Box/           yes    only when every child is: one
+    ///   Fragment/Theme                        child in doubt is squeezable
+    ///                                         height inside the base
+    ///   anything else                  no     images, inputs, maps, toggles
+    /// ```
+    ///
+    /// The scroll-container rule is also what keeps a nested scroll scrolling:
+    /// a Screen's FlexGrow Scroll or List — and any container holding one —
+    /// floors at zero, so it still absorbs the squeeze instead of being held
+    /// open at its whole content height. That is the `min-height: 0` trap CSS
+    /// authors hit in nested flex columns, avoided here by the verdict.
+    static func floorsHeightAtContent(_ node: GrMobNode) -> Bool {
+        let overflow = node.style?.overflow ?? ""
+        if !overflow.isEmpty && overflow != "visible" { return false }
+        switch node.type {
+        case "Scroll", "List", "TextArea", "CodeEditor", "TextGrid", "RichTextEditor":
+            return false
+        default:
+            break
+        }
+        // "auto" is CSS's initial height, the same as saying nothing.
+        let height = node.style?.height ?? ""
+        if !height.isEmpty && height != "auto" {
+            return GrMobMaxWidth.fixedLimit(height) != nil
+        }
+        switch node.type {
+        case "Text", "Paragraph", "Button", "Spacer":
+            return true
+        case "Row", "Column", "Card", "Box", "Fragment", "Theme":
+            return node.children.allSatisfy(floorsHeightAtContent)
+        default:
+            return false
+        }
+    }
+
+    /// The content minimum clamped by core.MaxWidth, in points only.
+    ///
+    /// CSS: an item's content size suggestion "is further clamped by the max
+    /// main size if that is definite". A capped box can be narrower than its
+    /// longest word — the word overflows, as it does in a browser — so a
+    /// floor above the cap would hold a row open for a box that can never
+    /// grow to fill it.
+    ///
+    /// The cap limits the box grMobBox paints, padding included (the host's
+    /// Width and MaxWidth are both border-box, as the WASM page's
+    /// `box-sizing: border-box` makes them there), so the padding is folded
+    /// in before the clamp and only the margin is added outside it. A
+    /// percentage cap has no container here and does not clamp; a floor that
+    /// is too high overflows a line, but a floor guessed too low is the
+    /// crushed-badge bug this walk exists to prevent.
+    private static func capped(_ inner: CGFloat, _ s: GrMobStyle?) -> CGFloat {
+        guard let s, let cap = GrMobMaxWidth.fixedLimit(s.maxWidth) else { return inner }
+        // The border inset counts with the padding: both are inside the
+        // border box the cap limits (GrMobStyle.contentInsets).
+        let padding = CGFloat(s.padding.left + s.padding.right) + 2 * s.borderInset
+        return min(inner + padding, cap) - padding
+    }
+
+    /// What a node's own box adds around its content along the main axis.
+    ///
+    /// The floor is compared against a flex base size, and on this host that
+    /// base is the whole painted box: grMobBox applies the padding and then
+    /// the margin outside it, so a badge whose text measures 26 points is 42
+    /// wide with 8 points of padding on each side, and a floor of 26 lets the
+    /// row crush it to the shape that started this — "TRY IT" drawn as
+    /// TR / Y / IT. This is CSS's rule too: the automatic minimum floors the
+    /// content box, and the item's outer size carries its padding as well.
+    private static func outerInsets(_ s: GrMobStyle?) -> CGFloat {
+        guard let s else { return 0 }
+        // A drawn border insets the content too (GrMobStyle.contentInsets), so
+        // it is part of what the box adds around its content.
+        return CGFloat(s.padding.left + s.padding.right + s.margin.left + s.margin.right)
+            + 2 * s.borderInset
+    }
+
+    /// The widest unbreakable run of a string, at a node's own text style.
+    static func textWidth(_ text: String, style: GrMobStyle?) -> CGFloat {
+        runs(of: text).reduce(0) { max($0, measure($1, style: style)) }
+    }
+
+    /// The pieces a line breaker may not split, in order.
+    ///
+    /// Whitespace is the break opportunity everybody agrees on. The hyphen and
+    /// the slash are here because CSS breaks AFTER both, and leaving them out
+    /// would over-estimate "one-off" and "and/or" — and over-estimating is the
+    /// one direction with a visible cost (see the table above). The separators
+    /// are kept on the run they follow, which is what a browser draws: a line
+    /// broken after "one-" leaves the hyphen on the first line.
+    ///
+    /// What this does not model is the rest of UAX #14 — CJK, where nearly
+    /// every character is a break opportunity, and the several punctuation
+    /// classes with their own rules. Both would only make the runs SHORTER,
+    /// so the floor this produces for them is already on the safe side of the
+    /// browser's.
+    static func runs(of text: String) -> [String] {
+        var out: [String] = []
+        var current = ""
+        for ch in text {
+            if ch.isWhitespace {
+                if !current.isEmpty { out.append(current); current = "" }
+                continue
+            }
+            current.append(ch)
+            if ch == "-" || ch == "/" {
+                out.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { out.append(current) }
+        return out
+    }
+
+    /// One run, measured with CoreText.
+    ///
+    /// CoreText rather than UIKit's `NSAttributedString.size(withAttributes:)`
+    /// for one reason and it is a structural one: `ios/verify` type-checks
+    /// every runtime file against a macOS target, where UIKit does not exist,
+    /// and it compiles this file into its harness so the walk above can be
+    /// checked without a simulator. CoreText is on both platforms, so the
+    /// measurement runs in the harness rather than being taken on trust.
+    ///
+    /// The font is built to match `grMobTextStyle`'s
+    /// `.font(.system(size:weight:))`: the system font at the same size, with
+    /// the same weight expressed as CoreText's -1...1 trait — the scale
+    /// UIFont.Weight's raw values are on. Both answers come out of the one
+    /// grMobFontWeightPair below, so the face this measures cannot drift from
+    /// the face grMobTextStyle draws.
+    static func measure(_ run: String, style: GrMobStyle?) -> CGFloat {
+        guard !run.isEmpty else { return 0 }
+        let size = (style?.fontSize ?? 0) > 0 ? style!.fontSize : 17
+        let font = systemFont(size: size, trait: grMobFontWeightPair(style?.fontWeight ?? 0).1)
+        let attributed = NSAttributedString(string: run, attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+        ])
+        let line = CTLineCreateWithAttributedString(attributed)
+        return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+    }
+
+    /// The system font at a size and a weight trait.
+    ///
+    /// `CTFontCreateUIFontForLanguage(.system, size, nil)` gives the regular
+    /// face; the weight is applied by re-describing it, which is what
+    /// UIFont.systemFont(ofSize:weight:) does underneath. A descriptor that
+    /// cannot be satisfied comes back nil, and the regular face is then the
+    /// answer — a weight that could not be found is a lighter, narrower face,
+    /// which is an under-estimate and therefore safe.
+    private static func systemFont(size: CGFloat, trait: CGFloat) -> CTFont {
+        let base = CTFontCreateUIFontForLanguage(.system, size, nil)
+            ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
+        guard trait != 0 else { return base }
+        let descriptor = CTFontDescriptorCreateCopyWithAttributes(
+            CTFontCopyFontDescriptor(base),
+            [kCTFontTraitsAttribute: [kCTFontWeightTrait: trait]] as CFDictionary)
+        return CTFontCreateWithFontDescriptor(descriptor, size, nil)
+    }
+}
+
+/// Go's Weight constants are the CSS numeric scale (200/400/700...), and this
+/// is the one ladder that maps them onto a face — in two vocabularies, because
+/// two things here need a font and they ask for it differently.
+///
+/// `.0` is SwiftUI's named weight, which grMobTextStyle hands to
+/// `.font(.system(size:weight:))`. `.1` is the same weight as a number on
+/// CoreText's -1...1 scale, which GrMobMinContent needs to build a CTFont to
+/// measure with; the numbers are UIFont.Weight's documented raw values, which
+/// is the same scale under another name.
+///
+/// One arm per line, both answers on it, because the whole reason this is one
+/// function is that a ladder split in two is a ladder that can be edited in
+/// one place: a measurement taken at a different weight from the one that gets
+/// drawn is a floor that is quietly wrong, and wrong in the direction that
+/// overflows a row.
+///
+/// It lives here rather than beside its SwiftUI caller because `ios/verify`
+/// compiles this file into its harness and does not compile Renderer.swift —
+/// the measurement can be checked off-device only if everything it reaches is
+/// on this side of that line.
+func grMobFontWeightPair(_ w: Int) -> (Font.Weight, CGFloat) {
+    switch w {
+    case ..<1: (.regular, 0)
+    case ..<200: (.ultraLight, -0.8)
+    case ..<300: (.thin, -0.6)
+    case ..<400: (.light, -0.4)
+    case ..<500: (.regular, 0)
+    case ..<600: (.medium, 0.23)
+    case ..<700: (.semibold, 0.3)
+    case ..<800: (.bold, 0.4)
+    case ..<900: (.heavy, 0.56)
+    default: (.black, 0.62)
+    }
+}
+
+/// The natural size of every image GrMobImage has decoded, by its src.
+///
+/// GrMobMinContent needs an image's natural size for its floor (imageFloor),
+/// and a tree walk cannot know it: the node carries only the URL. The view
+/// that loads the bitmap does know it, so GrMobImage records it here, and the
+/// walk reads it back.
+///
+/// # Why it is @Observable
+///
+/// The floor is read in FlexChildren's body, as a layout value, before the
+/// image has arrived, so the first answer is the declared width. When the
+/// bitmap lands only GrMobImage's own state changes. The Row's body would not
+/// run again, and its children would keep the stale floor. Observation tracks
+/// the read of `sizes` made during that body, so recording a size here runs
+/// the body again and the layout gets the new floor. The whole dictionary is
+/// one tracked property, so any image arriving re-runs every body that read
+/// it. Only a Row holding an Image with a src and a points Width reads it,
+/// which keeps that cheap.
+///
+/// Keyed by src rather than by node because the size belongs to the bitmap:
+/// two nodes showing one URL share it, and a node whose src changes must not
+/// keep the old image's size. Entries are never evicted. One is two numbers,
+/// and an app shows a bounded set of URLs.
+///
+/// Main thread only, like every other read and write of the tree: GrMobImage
+/// records on the main actor, and the walk runs inside view bodies.
+@Observable
+final class GrMobImageSizes {
+    static let shared = GrMobImageSizes()
+
+    private(set) var sizes: [String: CGSize] = [:]
+
+    /// The natural size recorded for src, or nil until its image has been
+    /// decoded (or when it never decodes).
+    func size(for src: String) -> CGSize? { sizes[src] }
+
+    /// Records src's natural size. A repeat of the same size is not written,
+    /// because a write notifies every observer even when nothing changed,
+    /// and each of them would lay out again for nothing.
+    func record(_ size: CGSize, for src: String) {
+        if sizes[src] != size { sizes[src] = size }
+    }
+}
