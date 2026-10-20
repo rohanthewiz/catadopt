@@ -46,7 +46,14 @@ func App(ctx *core.Context) core.View {
 	// State that outlives a screen lives above the Navigator: the profile
 	// route is discarded on Pop, but a request made there should still show
 	// when the cat's profile is opened again. Keyed by Cat.ID.
-	requested := core.NewState(ctx, map[string]bool{})
+	//
+	// The initial value comes from the bytdb store (store.go), so requests
+	// made in an earlier launch are in the first tree. openStore is called on
+	// every pass but opens only once; NewState ignores its initial value after
+	// the first pass, so the later snapshots are unused copies of a small map.
+	// With no data directory (browser, bare tests) the store is nil and the
+	// snapshot is empty: in-memory only, as before.
+	requested := core.NewState(ctx, openStore().snapshot())
 	cats := catalogue()
 
 	return core.WithTheme(appTheme,

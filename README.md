@@ -11,7 +11,9 @@ AmberTheme). Each card shows the cat's name, age and a short description:
   vaccinated, spayed/neutered, fee); tap its edges to step between cats;
 - the thumbnail strip previews every cat; Zoom shows the uncropped photo;
 - "Meet <name>" opens a profile with the full story and an "Ask to adopt"
-  button.
+  button. On Android and iOS the request is saved in an embedded
+  [bytdb](https://github.com/rohanthewiz/bytdb) database in the app's files
+  directory, so it survives a restart; the browser build keeps it in memory.
 
 The cats are sample data (`app/cats.go`): the photos are real Wikimedia
 Commons images, credited on each profile; the names and stories are invented.
@@ -66,6 +68,7 @@ app/          the app (every target mounts this):
   cats.go             the Cat record and the sample catalogue
   gallery_screen.go   home screen: the Gallery of cats
   profile_screen.go   one cat's profile and the adoption request
+  store.go            bytdb store: adoption requests survive a restart (natives only)
   app_test.go         render.Manager tests in debug mode
 ai_docs/      session docs
 wasm/         browser host: main.go (webhost.Run) and index.html

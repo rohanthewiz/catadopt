@@ -2,10 +2,13 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/mobile"
 	"github.com/rohanthewiz/grmob/render"
 )
 
@@ -118,6 +121,73 @@ func TestMeetAndAdopt(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// TestAdoptionSurvivesRelaunch points the store at a temp data directory, as
+// the native shells do with their files directory, asks to adopt, then
+// simulates a relaunch: closeStore drops the engine and a fresh App mount
+// reopens the file, so "Request sent" can only come from disk.
+func TestAdoptionSurvivesRelaunch(t *testing.T) {
+	core.ClearConcerns()
+	withDataDir(t)
+
+	// Marmalade, because only the Gallery's front card has a "Meet" action.
+	mgr := render.New(core.NewContext(), App)
+	tap(t, mgr, "Meet Marmalade")
+	tap(t, mgr, "Ask to adopt Marmalade")
+	mgr.Close()
+
+	closeStore()
+	mgr = render.New(core.NewContext(), App)
+	defer mgr.Close()
+
+	tap(t, mgr, "Meet Marmalade")
+	if find(tree(t, mgr), buttonLabeled("Request sent")) == nil {
+		t.Fatal("adoption request was lost across a relaunch")
+	}
+	// Only the cat asked for: the snapshot read from disk must not mark the
+	// others. Checked on the store, since the other cats' profiles are only
+	// reachable by paging the Gallery.
+	if got := openStore().snapshot(); len(got) != 1 || !got["marmalade"] {
+		t.Fatalf("snapshot after relaunch = %v, want only marmalade", got)
+	}
+	assertNoConcerns(t)
+}
+
+// TestAddRequestTwice checks a repeat request for the same cat is absorbed
+// (ON CONFLICT DO NOTHING) rather than logged as a failed write, and still
+// reads back as one request.
+func TestAddRequestTwice(t *testing.T) {
+	withDataDir(t)
+
+	s := openStore()
+	if s == nil {
+		t.Fatal("store did not open in the temp data directory")
+	}
+	s.addRequest("rusty", time.Now())
+	s.addRequest("rusty", time.Now())
+
+	res, err := s.db.Exec(`SELECT count(*) FROM adoption_requests WHERE cat_id = $1`, "rusty")
+	if err != nil {
+		t.Fatalf("counting requests: %v", err)
+	}
+	if n := fmt.Sprint(res.Rows[0][0]); n != "1" {
+		t.Fatalf("rusty has %s request rows, want 1", n)
+	}
+}
+
+// TestNoDataDirRunsInMemory: with no directory registered (the browser build)
+// openStore is nil, and the nil store's methods are safe no-ops.
+func TestNoDataDirRunsInMemory(t *testing.T) {
+	mobile.SetDataDir("")
+	s := openStore()
+	if s != nil {
+		t.Fatal("store opened without a data directory")
+	}
+	s.addRequest("frost", time.Now()) // must not panic
+	if got := s.snapshot(); len(got) != 0 {
+		t.Fatalf("nil store snapshot = %v, want empty", got)
+	}
+}
+
 // TestPhotoURL pins the Wikimedia thumbnail layout photoURL relies on.
 func TestPhotoURL(t *testing.T) {
 	got := photoURL("3/3a/Cat03.jpg")
@@ -128,6 +198,19 @@ func TestPhotoURL(t *testing.T) {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+// withDataDir registers a fresh temp directory as the shell's data directory
+// for one test. Cleanups run last-in first-out, so the store is closed (and
+// the directory unregistered) before t.TempDir removes the files; the other
+// tests then run with no directory, in memory, as they always have.
+func withDataDir(t *testing.T) {
+	t.Helper()
+	mobile.SetDataDir(t.TempDir())
+	t.Cleanup(func() {
+		closeStore()
+		mobile.SetDataDir("")
+	})
+}
 
 type node struct {
 	Type     string

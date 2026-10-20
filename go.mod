@@ -2,12 +2,17 @@ module catadopt
 
 go 1.26.10
 
-require github.com/rohanthewiz/grmob v0.7.2
+require (
+	github.com/rohanthewiz/bytdb v0.22.0
+	github.com/rohanthewiz/grmob v0.7.2
+)
 
 require (
+	github.com/rohanthewiz/btypedb v0.9.0 // indirect
 	github.com/rohanthewiz/element v0.7.0 // indirect
 	github.com/rohanthewiz/rweb v0.1.28 // indirect
 	github.com/rohanthewiz/serr v1.4.0 // indirect
+	github.com/tidwall/btype v0.3.0 // indirect
 	golang.org/x/mobile v0.0.0-20251021151156-188f512ec823 // indirect
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect

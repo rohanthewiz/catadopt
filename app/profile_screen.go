@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
@@ -29,6 +30,8 @@ const profileHeight = 320
 // The route declares no hooks of its own. The request flag lives in the App's
 // requested map (see App), because this frame and its state are discarded on
 // Pop, and a request should still show the next time the profile is opened.
+// On the natives the request is also written to the bytdb store (store.go),
+// so it survives a restart too.
 func profileScreen(ctx *core.Context, c Cat, requested core.State[map[string]bool]) core.View {
 	th := ctx.Theme()
 	asked := requested.Get()[c.ID]
@@ -43,6 +46,11 @@ func profileScreen(ctx *core.Context, c Cat, requested core.State[map[string]boo
 		}
 		next[c.ID] = true
 		requested.Set(next)
+		// Memory first, disk second: the UI never waits on the store, and a
+		// failed write costs only this request's survival across a restart.
+		// openStore returns the already-open singleton (nil in the browser,
+		// and addRequest is nil-safe).
+		openStore().addRequest(c.ID, time.Now())
 	}
 
 	label := "Ask to adopt " + c.Name
