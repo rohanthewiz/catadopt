@@ -14,9 +14,12 @@ import okhttp3.OkHttpClient
 // Coil 2 fetches through OkHttp, whose default User-Agent is "okhttp/4.x".
 // Image hosts that enforce a robot policy refuse that outright. Wikimedia
 // answers 403 "Please set a user-agent and respect our robot policy" (see
-// https://w.wiki/4wJS), so every Commons photo in the app drew as an empty
+// https://w.wiki/4wJS), so a Commons photo in a core.Image drew as an empty
 // box on Android while the browser and iOS, which send descriptive agents
-// of their own, loaded them fine.
+// of their own, loaded them fine. (Found in an app on a Galaxy Z Fold6.)
+// It is the same lesson GrMobMapView learned for OSM's tile servers, which
+// is why createOsmMap sets osmdroid's userAgentValue; Coil was never given
+// the equivalent.
 //
 // # How
 //
@@ -30,7 +33,7 @@ import okhttp3.OkHttpClient
 // The shape follows Wikimedia's policy: client name/version, then a way to
 // identify the app (its application ID), then the platform:
 //
-//	Cat Adoption/1.0 (com.rohanthewiz.catadopt; Android 14) grmob
+//	My App/1.0 (com.example.myapp; Android 14) grmob
 //
 // Everything else stays at Coil's builder defaults, so images behave as
 // before apart from actually arriving.

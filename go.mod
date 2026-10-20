@@ -2,7 +2,7 @@ module catadopt
 
 go 1.26.10
 
-require github.com/rohanthewiz/grmob v0.7.0
+require github.com/rohanthewiz/grmob v0.7.1
 
 require (
 	github.com/rohanthewiz/element v0.7.0 // indirect
