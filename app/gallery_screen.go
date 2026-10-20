@@ -59,7 +59,12 @@ func galleryScreen(ctx *core.Context, cats []Cat, requested core.State[map[strin
 		// is the horizontal thumbnail strip, which doesn't fight a vertical
 		// screen scroll for the same drag.
 		Scroll: true,
-		Gap:    float64(th.Spacing.SM),
+		// Fill makes the scrolled content at least as tall as the viewport,
+		// so the Surface background reaches the bottom of the screen. Without
+		// it the column stops at its content and, on Android, the window's
+		// own white shows below it.
+		Fill: true,
+		Gap:  float64(th.Spacing.SM),
 		// Screen paints no background of its own; stating one here also
 		// paints the safe-area inset, so the status-bar strip matches on the
 		// natives too. Surface rather than Background: AmberTheme keeps its

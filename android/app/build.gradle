@@ -1,0 +1,368 @@
+plugins {
+    id 'com.android.application'
+    // No 'kotlin-android' here: AGP 9 has built-in Kotlin support and fails the
+    // build if the standalone plugin is also applied. See kotl.in/gradle/agp-built-in-kotlin.
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+android {
+    // Properties are assigned with '=' throughout. The Groovy space-assignment
+    // form ('namespace "x"') is deprecated and removed in Gradle 10.
+    namespace = 'com.grmob.app'
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.rohanthewiz.catadopt"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.1"
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+    }
+}
+
+// Replaces the old android.kotlinOptions block, which Kotlin 2.x deprecated in
+// favour of the typed compilerOptions DSL on the kotlin extension.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+// A configuration of its own so the sources are never on any compile or
+// runtime classpath: they are documentation this repository checks, not code
+// it builds against.
+//
+// Nothing turns transitivity off HERE, and that is deliberate — see the
+// dependency declaration below, which turns it off on itself. A configuration
+// carrying `transitive = false` also drops the BOM's constraints, which are
+// the whole mechanism that gives the sources jar its version.
+configurations {
+    composeLayoutSources
+}
+
+// The BOM coordinate, named once and used twice: it constrains the app's own
+// Compose dependencies below, and it is written into the fetch's receipt so
+// that a receipt from an older BOM can be told apart from a derivation that is
+// wrong. See fetchComposeLayoutSources.
+def composeBomCoord = 'androidx.compose:compose-bom:2024.12.01'
+
+tasks.register('fetchComposeLayoutSources') {
+    group = 'verification'
+    description = 'Downloads the foundation-layout sources jar that ' +
+        'mobile/verify reads the fixed-size census out of.'
+    // Captured outside doLast so the task holds the file collection rather
+    // than the project, which is what lets it run under the configuration
+    // cache.
+    def sources = configurations.composeLayoutSources
+    def bom = composeBomCoord
+    // The receipt: what gradle actually resolved, written where mobile/verify
+    // can read it.
+    //
+    // # Why gradle has to say
+    //
+    // mobile/verify finds the sources jar by DERIVING the version the same way
+    // gradle does — out of the BOM's own pom, in the local cache — and then
+    // globbing for it. That is a second derivation of one fact rather than a
+    // second spelling of it, which is the right shape, and it has one failure
+    // mode that is silent: if the two ever disagreed (a different entry
+    // winning, a platform enforced somewhere else), the Go side would look for
+    // a jar that is not there and SKIP. The quiet answer, for the one thing the
+    // arrangement exists to make loud.
+    //
+    // So the resolution writes itself down. The BOM rides along because a
+    // receipt from a previous BOM is a different situation from a derivation
+    // that is wrong, and only one of them is anybody's fault.
+    def receipt = layout.buildDirectory.file('composeLayoutSources.txt')
+    outputs.file(receipt)
+    doLast {
+        def resolved = sources.files
+        resolved.each { println it }
+        def out = receipt.get().asFile
+        out.parentFile.mkdirs()
+        out.text = "bom=" + bom + "\n" +
+            resolved.collect { "sources=" + it.absolutePath }.join("\n") + "\n"
+    }
+}
+
+dependencies {
+    // The Go core + app, bound by gomobile. Produced by ../build.sh.
+    implementation files('libs/grmob.aar')
+
+    def composeBom = platform(composeBomCoord)
+    implementation composeBom
+
+    // The sources for the one Compose artifact this repository makes written
+    // claims about.
+    //
+    // docs/platforms/native.md's fixed-size census says what Modifier.width/
+    // height do to a child (they set a minimum AND a maximum, which is the
+    // whole of that target's divergence) and what a Row does to an unweighted
+    // child that does not fit (it clamps it to the space left, with no
+    // proportional shrink anywhere). Both are readings of foundation-layout,
+    // and until this configuration existed they were readings of whatever
+    // version happened to be in the machine's gradle cache — which is not the
+    // version this module builds against. internal/pinfixture executes the
+    // second of those readings, so four more lines of the same file are held
+    // here too.
+    //
+    // Nothing compiles against these; they exist so mobile/verify can hold the
+    // prose to the source.
+    //
+    //     ./gradlew :app:fetchComposeLayoutSources
+    //
+    // is the one-shot fetch, and it is a network call — which is why the
+    // checks that read the jar skip rather than fail when it is absent.
+    //
+    // # No version, on purpose
+    //
+    // This used to name one, as `ext.composeLayoutVersion = '1.6.8'` at the top
+    // of the file, with a Go test holding that number to the BOM's own pom. The
+    // number was right and the arrangement was not: a reader of this file saw
+    // two versions and no mechanism, and the one thing that made them agree
+    // lived in another language in another tree.
+    //
+    // So the BOM resolves this the way it resolves every other Compose
+    // artifact here, and there is one version in this file again. Three details
+    // are what make it work, and each of them is the reason the previous
+    // arrangement gave for not doing it:
+    //
+    //	the platform, on THIS      a BOM constrains the configuration it is
+    //	configuration              declared in. Without this line the coordinate
+    //	                           below has no version at all and does not
+    //	                           resolve.
+    //
+    //	transitive = false, on     nothing here wants foundation-layout's
+    //	the DEPENDENCY rather      dependencies — only its own text — and without
+    //	than the configuration     it the resolution drags in the whole Compose
+    //	                           graph including the desktop artifacts, whose
+    //	                           skiko dependency publishes two runtime
+    //	                           variants a configuration carrying no
+    //	                           attributes cannot choose between. Putting it
+    //	                           on the configuration instead ALSO drops the
+    //	                           BOM's constraints, which is what made this
+    //	                           look impossible.
+    //
+    //	an artifact block          `:sources@jar` is artifact-only notation: it
+    //	rather than `@jar`         skips the module metadata, so the BOM has
+    //	                           nothing to constrain and a version has to be
+    //	                           written out. Declaring the classifier this way
+    //	                           keeps metadata in the resolution and takes one
+    //	                           artifact out of it.
+    //
+    // mobile/verify's TestTheComposeSourcesTakeTheirVersionFromTheBOM holds
+    // this shape, because the failure of losing it is silent: a version written
+    // back in resolves perfectly and is simply not checked against anything.
+    composeLayoutSources composeBom
+    composeLayoutSources('androidx.compose.foundation:foundation-layout-android') {
+        transitive = false
+        artifact {
+            name = 'foundation-layout-android'
+            type = 'jar'
+            classifier = 'sources'
+            extension = 'jar'
+        }
+    }
+
+    implementation 'androidx.activity:activity-compose:1.9.0'
+    implementation 'androidx.compose.foundation:foundation'
+    // material3 supplies the interaction-heavy widgets (Button ripple,
+    // Checkbox, TabRow) with correct accessibility semantics; GrMob styles
+    // are injected through their color/shape/padding slots.
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui'
+
+    // ProcessLifecycleOwner, the app-wide foreground/background signal
+    // behind core's lifecycle host event (AppLifecycle.kt). The activity
+    // artifact above already brings lifecycle-runtime; this adds only the
+    // process-level owner. 2.6.x matches the lifecycle line activity 1.9
+    // resolves to and compiles against compileSdk 34.
+    implementation 'androidx.lifecycle:lifecycle-process:2.6.2'
+
+    // Jetpack WindowManager: window metrics and FoldingFeature (hinge
+    // posture and bounds), behind core's window host event (AppWindow.kt).
+    // 1.4.0's AAR metadata declares minCompileSdk 34, which is this app's.
+    implementation 'androidx.window:window:1.4.0'
+
+    // Image node rendering (remote/local sources).
+    implementation 'io.coil-kt:coil-compose:2.6.0'
+
+    // core.MapView's map (runtime/GrMobMapView.kt). osmdroid draws
+    // OpenStreetMap tiles with no API key and no dependency on Play Services
+    // being installed, which is what makes the node usable on arrival rather
+    // than after a deployment secret is obtained — see that file's comment for
+    // the comparison with Google Maps Compose.
+    //
+    // 6.1.x is the current line and compiles against compileSdk 34. It pulls in
+    // no Compose: the map is a plain Android View, wrapped in AndroidView, which
+    // is also why it needs the onResume/onPause/onDetach handling that file
+    // owns.
+    implementation 'org.osmdroid:osmdroid-android:6.1.18'
+
+    // core's audio service: ExoPlayer does the playing, media3-session
+    // wraps it in a MediaSession + MediaSessionService (GrMobAudioService)
+    // for the lock screen and background playback, and hands the app a
+    // MediaController to drive it with (AudioPlayer). 1.4.x is the last
+    // line that compiles against compileSdk 34; 1.5+ wants 35.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-session:1.4.1'
+}
+
+// The compile classpath and the platform jar, printed for android/verify.
+//
+// # What reads this, and why it is gradle that answers
+//
+// android/verify/sources.sh compiles the Kotlin that imports Compose, the
+// Android SDK, osmdroid and coil — which is every runtime file except the two
+// that import nothing. To do that it needs a classpath, and the only honest
+// source of one is the resolution this module already performs: `debugCompile
+// Classpath` is what the app is built against, at the versions the BOM and the
+// declarations above pin.
+//
+// The obvious alternative — glob the gradle cache for each artifact and take
+// the newest — was tried and is wrong here in a way that is worth recording.
+// This machine's cache held TWO of every Compose artifact: 1.6.8, which the
+// BOM then pinned, and 1.10.0, which something else once resolved (it holds
+// 1.7.6 as well now, the BOM's since 2024.12.01). Newest-wins picked 1.10.0,
+// and the pass then failed on `Modifier.animateItemPlacement` — an API that
+// 1.6.8 had and 1.10.0 removed. A classpath assembled by guesswork fails
+// on the library rather than on the source, which is the one thing a compile
+// check must never do.
+//
+// That is the same lesson TestTheComposeCensusClaimsAreWhatTheSourceSays
+// records about the sources jar, arriving from the other direction: there a
+// wrong version made a paragraph quietly stale, here it makes the pass loudly
+// wrong about code that is fine.
+//
+// # Two outputs, tab-separated, one per line
+//
+//	BOOT<TAB><path>   the platform jars for compileSdk — android.jar and the
+//	                  build tools' lambda stubs. AGP picks these from compileSdk
+//	                  above, so the verify script never parses a version out of
+//	                  this file.
+//	CP<TAB><path>     one entry of the compile classpath; .aar and .jar both
+//	                  appear, and the caller extracts classes.jar from the .aar
+//	                  ones (an AGP artifact transform this task deliberately
+//	                  does not run, because running it would pull in the rest of
+//	                  the variant).
+//
+// Printed rather than written to a file: the caller wants both lists in one
+// shell pipeline, and an output file would need an up-to-date check whose
+// inputs are the whole resolution.
+//
+// # Why this is not `compileDebugKotlin`
+//
+// Because that task needs libs/grmob.aar, which is gitignored and produced by
+// ../build.sh — gomobile, the NDK and a Go toolchain. `com.grmob.runtime`
+// imports nothing from that .aar, deliberately, so it can be compiled on a
+// checkout that has never run gomobile. A check that needs half an hour of
+// setup before it can run is a check nobody runs; see android/verify/run.sh,
+// which makes the same argument about JUnit one step down.
+//
+// # Why the compile classpath is collected in afterEvaluate
+//
+// `debugCompileClasspath` does not exist while this file is being evaluated:
+// AGP creates the per-variant configurations afterwards, so a direct
+// `configurations.getByName(...)` here fails the whole build with
+// "Configuration with name 'debugCompileClasspath' not found" — for every
+// task, not just this one. A file collection filled in afterEvaluate keeps the
+// task holding a resolvable collection rather than the project, which is what
+// lets it run under the configuration cache (the same care fetchComposeLayout
+// Sources takes above, for the same reason).
+def verifyBootClasspath = androidComponents.sdkComponents.bootClasspath
+def verifyCompileClasspath = objects.fileCollection()
+afterEvaluate {
+    verifyCompileClasspath.from(configurations.getByName('debugCompileClasspath'))
+}
+
+tasks.register('printVerifyClasspath') {
+    group = 'verification'
+    description = 'Prints the debug compile classpath and the platform jars, ' +
+        'for android/verify/sources.sh.'
+    doLast {
+        verifyBootClasspath.get().each { println 'BOOT\t' + it.asFile }
+        verifyCompileClasspath.files.each { println 'CP\t' + it }
+    }
+}
+
+// The command-line Kotlin compiler android/verify assembles by hand, pulled
+// into the gradle cache where kotlinc.sh looks for it.
+//
+// # The gap this closes, which was a sentence rather than a task
+//
+// Both of android/verify's gates skip when the cache has no Kotlin compiler,
+// and each names its own remedy. Neither remedy worked. `printVerifyClasspath`
+// resolves the APP's compile classpath, which contains no compiler at all;
+// `compileDebugKotlin` does pull one, and needs libs/grmob.aar, which is the
+// gomobile build the source pass exists to not require. So a reader who met
+// the skip, followed the sentence and ran the pass again met the same skip.
+//
+// Measured on an empty GRADLE_USER_HOME: after printVerifyClasspath the cache
+// held kotlin-stdlib, kotlin-reflect, coroutines and annotations — four of the
+// six jars — and neither kotlin-compiler-embeddable nor the Compose plugin,
+// which are the two that are not anybody's compile dependency. Four of six is
+// the worst shape for this: enough that the cache looks populated, not enough
+// to compile a line.
+//
+// # Why a configuration of its own
+//
+// The same reason composeLayoutSources above has one: these jars are a
+// TOOLCHAIN this repository runs, not code it builds against, and a compiler
+// on the app's compile classpath would put the whole of kotlinc's internals in
+// scope for every file in the module.
+//
+// # What it resolves, and what it leaves to transitivity
+//
+// The two coordinates that are nobody else's dependency, at the build's own
+// Kotlin version. kotlin-compiler-embeddable brings the standard library, the
+// daemon, reflection and JetBrains' annotations with it — the rest of the six
+// jars kotlinc.sh assembles — so they are not named here. Naming them would be
+// a second, weaker statement of a dependency the compiler already declares,
+// and it would pin versions this repository has no opinion about.
+configurations {
+    kotlinCliCompiler
+}
+
+dependencies {
+    kotlinCliCompiler "org.jetbrains.kotlin:kotlin-compiler-embeddable:" +
+        rootProject.ext.kotlinVersion
+    // The plugin has to be the compiler's own version and not merely a recent
+    // one; see kotlinc.sh, whose one versioned lookup is this artifact.
+    kotlinCliCompiler "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:" +
+        rootProject.ext.kotlinVersion
+}
+
+tasks.register('fetchKotlinCompiler') {
+    group = 'verification'
+    description = 'Downloads the Kotlin command-line compiler and the Compose ' +
+        'compiler plugin that android/verify compiles with.'
+    // Captured outside doLast so the task holds the file collection rather than
+    // the project, which is what lets it run under the configuration cache —
+    // the same care fetchComposeLayoutSources and printVerifyClasspath take.
+    def compiler = configurations.kotlinCliCompiler
+    doLast {
+        // Printed, so a reader who ran this because a gate told them to can see
+        // that something arrived. There is no receipt file: kotlinc.sh finds
+        // these by walking the cache and reads the version off the path, so
+        // gradle writing down what it resolved would be a second spelling of
+        // something the consumer derives for itself.
+        compiler.files.each { println it }
+    }
+}

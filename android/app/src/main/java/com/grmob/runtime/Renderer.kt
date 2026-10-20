@@ -1,0 +1,4074 @@
+package com.grmob.runtime
+
+import androidx.compose.runtime.DisposableEffect
+import android.view.KeyEvent
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Animatable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicSecureTextField
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.KeyboardActionHandler
+import androidx.compose.foundation.text.input.TextFieldDecorator
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ProvidedValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+// The Float Animatable, aliased because androidx.compose.animation.Animatable
+// (the Color one, above) has the same simple name.
+import androidx.compose.animation.core.Animatable as FloatAnimatable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+// The disclosure pair. Compose says "expanded" with actions rather than with a
+// property, which is why these land in gestureModifier and not in
+// GrMobStyle.boxModifier's semantics block — see grMobDisclosure.
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.Placeable
+import kotlin.math.ceil
+import kotlin.math.roundToInt
+
+/**
+ * Node-tree → Compose mapping.
+ *
+ * The design deliberately leans on Compose's own reconciler for everything the
+ * Go reconciler doesn't do: view identity across recompositions (`key()` per
+ * child), state retention in unchanged siblings, animation plumbing, and
+ * accessibility semantics (via material3 components). The Go side only has to
+ * keep the data tree correct; nothing here caches views or paths.
+ */
+val LocalGrMobRuntime = compositionLocalOf<GrMobRuntime> {
+    error("GrMobRoot not mounted")
+}
+
+/**
+ * Inherited disabled state.
+ *
+ * A node's own `Style.Disabled` covers the common case — a button, a field —
+ * but "disable this whole section while the form submits" is the other half
+ * of what the flag is for, and Compose has no subtree-wide equivalent of
+ * SwiftUI's `.disabled(true)` or CSS's `pointer-events: none`, both of which
+ * propagate. This CompositionLocal is that equivalent, so one Go declaration
+ * means the same thing on all three targets rather than "the node only" here
+ * and "the node and everything under it" there.
+ *
+ * It is one-way: nothing re-enables a subtree inside a disabled ancestor,
+ * which is also how the two platform mechanisms it mirrors behave.
+ */
+val LocalGrMobDisabled = compositionLocalOf { false }
+
+/**
+ * True at and below a core.Inert node: nothing in the subtree takes keyboard
+ * focus.
+ *
+ * # What it is for on a phone
+ *
+ * core.Style.Inert is the web's `inert`. On the phones the reader half is
+ * AccessibilityHidden's and the touch half is whatever covers the layer, so
+ * what is left is a hardware keyboard's focus traversal. That half was open:
+ * with a comps.Drawer shut on a Galaxy Z Fold6 and a USB keyboard, Tab went
+ * through the shut panel's ✕ and rows one by one. Nothing was drawn, since the
+ * panel is translated out of its clipped box, and TalkBack said nothing, since
+ * the layer is AccessibilityHidden. From the keyboard, Tab looked dead for five
+ * presses.
+ *
+ * # How it reaches every control
+ *
+ * Compose's focusProperties covers the focus targets after it in its own
+ * modifier chain, not a whole subtree. So RenderNode puts
+ * `focusProperties { canFocus = false }` at the head of the modifiers of
+ * *every* node under an Inert one. `extra` opens each node's own chain
+ * (boxModifier starts from it, and so do the controls), so the target a
+ * clickable, a Button or a field adds after it is covered. A core.Focus
+ * aimed inside is refused as well, since requestFocus asks the same target
+ * whether it can focus.
+ *
+ * One-way, like the disabled local: core has no way to un-inert a subtree.
+ */
+val LocalGrMobInert = compositionLocalOf { false }
+
+/**
+ * True below a *named control*: a node with an AccessibilityLabel that is
+ * also something you activate (see [namesItsContent]). A core.Text under one
+ * drops its own semantics, so the control is heard by its name alone.
+ *
+ * # Why the label does not already replace the text
+ *
+ * boxModifier merges a labelled node's descendants into it, meaning the name
+ * to *replace* them, as aria-label does on the web and a label after
+ * `.combine` does in SwiftUI. Compose does not read it that way. A merging
+ * node with children gets no contentDescription of its own: Compose 1.7
+ * emits the label as a fake child node
+ * (AndroidComposeViewAccessibilityDelegateCompat, populateAccessibility-
+ * NodeInfoProperties) and leaves each Text child in the tree beside it, and
+ * TalkBack speaks all of them. On a Galaxy Z Fold6 a comps.Rating star read
+ * "1 of 5, White star, Button" (the ☆ glyph by its Unicode name) and a
+ * comps.Calendar day "Not selected, Monday, March 2, 2026, 2, Button".
+ *
+ * # Why only a control
+ *
+ * On the web a name replaces the content only where the content *is* the
+ * name, which is a control's: a button's or a cell's. A labelled group or
+ * region keeps its content readable, which is why a comps.Stepper still says
+ * its number and why this local is not opened by a label alone.
+ *
+ * It is one-way, like the disabled local: nothing under a named control
+ * speaks its text again. A control inside a control is not something core
+ * builds, and a Button's caption is drawn by GrMobButton, not by GrMobText.
+ */
+val LocalGrMobNamedControl = compositionLocalOf { false }
+
+/**
+ * Whether [node] is a named control, whose AccessibilityLabel stands for its
+ * whole content (see [LocalGrMobNamedControl]).
+ *
+ * A label and one of two signs that the node is activated rather than read.
+ * The first is an onClick. The second is a role whose content is the name:
+ * ARIA's children-presentational roles that core carries (button, img, tab,
+ * radio, option, progressbar), plus link and gridcell, whose name comes from
+ * their content on the web. The role catches a control that is disabled
+ * this pass: a comps.Calendar day outside Min..Max has no onClick but is
+ * still a cell named by its date.
+ */
+internal fun namesItsContent(node: GrMobNode): Boolean {
+    val s = node.style ?: return false
+    if (s.accessibilityHidden || s.accessibilityLabel.isEmpty()) return false
+    if (node.stringProp("onClick").isNotEmpty()) return true
+    return s.accessibilityRole in NAME_IS_CONTENT_ROLES
+}
+
+private val NAME_IS_CONTENT_ROLES = setOf(
+    "button", "img", "tab", "radio", "option", "progressbar", "link", "gridcell",
+)
+
+/**
+ * What the nearest labelled ancestor already says about itself: its
+ * AccessibilityLabel and its AccessibilityValue's text, folded for comparison
+ * (see [spokenByLabel]). A core.Text under one whose content is one of these
+ * says nothing the listener has not heard, so GrMobText drops its semantics.
+ *
+ * # Why a labelled *group* still echoes
+ *
+ * [LocalGrMobNamedControl] silences a named control's whole content, because
+ * a control's name stands for it. A group's does not: a comps.Stepper's
+ * number and a comps.Drawer panel's rows are content the label introduces
+ * rather than replaces, which is why that local is not opened by a label
+ * alone. But the label becomes a fake child beside them, and a stated value
+ * becomes a stateDescription TalkBack reads as well, so any content that
+ * repeats either is heard twice over. Measured on a Galaxy Z Fold6 (Samsung
+ * TalkBack 16.2):
+ *
+ *	  comps.Stepper  label "Guests", value "2", a Text "2" between the buttons
+ *	    before  "2, Guests, 2"
+ *	    after   "2, Guests"
+ *	  comps.Drawer   label "Notebook", a Text "Notebook" in its header
+ *	    before  "Notebook, Notebook"
+ *	    after   "Notebook"
+ *
+ * Neither widget can drop the Text instead: the web scopes aria-value* to
+ * progressbar and drops a group's value, so the number between the buttons is
+ * the only place the web hears it, and the drawer's title is a visible
+ * heading. This is Compose reading a merged label differently from the other
+ * two targets, so the repair belongs here.
+ *
+ * # Where the scope ends
+ *
+ * The set is replaced, not added to, at every labelled node, because that is
+ * exactly where Compose's merge stops: `mergeConfig` skips a child that
+ * merges its own descendants ("they're independently screen-reader-
+ * focusable"), so a nested labelled node's Texts are spoken under *its* name
+ * and have nothing to do with the outer one's. A node with no label inherits,
+ * since it was merged into whatever labelled ancestor holds it.
+ */
+val LocalGrMobGroupSaid = compositionLocalOf { emptySet<String>() }
+
+/**
+ * The strings [node]'s own accessibility statement puts into the announcement
+ * — its label and, when stated, its value text — folded to compare by ear.
+ * Empty when the node states no label, which is also when boxModifier does not
+ * merge and so nothing of the node's is read with its children's.
+ *
+ * Folding is trim + lowercase because a screen reader speaks "Notebook" and
+ * "notebook " identically; a duplicate to the ear is the thing being removed,
+ * not a duplicate to the byte.
+ */
+internal fun spokenByLabel(node: GrMobNode): Set<String> {
+    val s = node.style ?: return emptySet()
+    if (s.accessibilityHidden || s.accessibilityLabel.isEmpty()) return emptySet()
+    val said = mutableSetOf(s.accessibilityLabel.trim().lowercase())
+    val value = s.accessibilityValue.text
+    if (value.isNotEmpty()) said.add(value.trim().lowercase())
+    return said
+}
+
+/**
+ * Each radio's place in the nearest enclosing radiogroup, in document order,
+ * and the group's size: what TalkBack reads as "3 of 8". Null outside a group.
+ *
+ * # Why Compose's own count was wrong
+ *
+ * With no stated collection info, Compose numbers a `selectableGroup`'s
+ * members itself (setCollectionItemInfo in its accessibility delegate): an
+ * item's index is how many selectable siblings have a smaller
+ * `layoutNode.placeOrder`. placeOrder counts from zero *within each layout
+ * parent*, so it is only an index when every radio sits directly in one Row
+ * or Column. comps.ColorSwatchPicker lays its radios out as a grid, one Row
+ * per line, and TalkBack heard it on lesson 5.9 (emulator, 2026-09-22):
+ *
+ *	  grid       blue orange teal yellow pink green / purple red
+ *	  placeOrder  0    1     2     3     4    5    /   0     1
+ *	  heard       ·    3     5     6     7    8    /   1     3     "of 8"
+ *
+ * (blue, the selected swatch, was not reached). orange is "3" because blue
+ * *and* purple are at place 0, and so on down
+ * the line: every heard number is one plus the count of places lower than
+ * its own across both rows.
+ *
+ * # The repair
+ *
+ * The group states `collectionInfo` (n rows, one column) and each radio its
+ * `collectionItemInfo`, both computed here from the Go tree, and the group no
+ * longer writes selectableGroup(). Both halves are needed: Compose 1.10 sets
+ * an item's stated info and then, when the parent is a selectableGroup,
+ * derives one anyway and overwrites it (grMobRole's radiogroup arm has the
+ * detail). With no selectableGroup the stated info is final, and the layout
+ * that holds the radios stops mattering. Document order is the reading order on
+ * every target: the web's aria-posinset is derived from the DOM the same way,
+ * and under RTL a Row mirrors its drawing, not its order.
+ *
+ * The positions are keyed by node identity (GrMobNode does not override
+ * equals), which is exactly the scope wanted: a replaced node is a new
+ * instance and the walk that finds it again gives it its new place.
+ */
+val LocalGrMobRadioPositions = compositionLocalOf<RadioPositions?> { null }
+
+/** The members of one radiogroup, each with its zero-based place. */
+class RadioPositions(val index: Map<GrMobNode, Int>) {
+    val count: Int get() = index.size
+    // Structural, so derivedStateOf below only reports a new value, and the
+    // group only re-provides, when a radio was added, removed or reordered.
+    override fun equals(other: Any?) = other is RadioPositions && other.index == index
+    override fun hashCode() = index.hashCode()
+}
+
+/**
+ * The radios under [group], in document order. A radio is counted when it
+ * would be in the accessibility tree: not `display: none` (never composed),
+ * not under AccessibilityHidden (pruned by clearAndSetSemantics). The walk
+ * stops at a nested radiogroup, whose radios are its own set, as ARIA scopes
+ * aria-posinset to the nearest group.
+ */
+internal fun radioPositions(group: GrMobNode): RadioPositions {
+    val index = LinkedHashMap<GrMobNode, Int>()
+    fun walk(n: GrMobNode) {
+        for (child in n.children) {
+            val s = child.style
+            if (s?.display == "none" || s?.accessibilityHidden == true) continue
+            when (s?.accessibilityRole) {
+                "radio" -> index[child] = index.size
+                "radiogroup" -> {}
+                else -> walk(child)
+            }
+        }
+    }
+    walk(group)
+    return RadioPositions(index)
+}
+
+/**
+ * Whether the Column being composed has no height of its own to divide among
+ * FlexGrow children: true inside a vertical scroll's content, until something
+ * on the way down gives a height back.
+ *
+ * # The defect it exists for
+ *
+ * FlexGrow reaches Compose as Modifier.weight, and a Column divides weight out
+ * of its *maximum* height — or, when that is infinite, out of its minimum. A
+ * Column inside a scrolled page with no minimum has neither, so every weighted
+ * child was measured at zero. comps.DataTable gives its rows List FlexGrow(1)
+ * (to fill a table that has a Height), and on lesson 4.6 — a table in a
+ * scrolled page — the header sat directly on the pager with no rows between
+ * them. CSS sizes a flex-grow item in an auto-height column to its content,
+ * and so does GrMobFlexLayout on iOS; with this local, ColumnChildren does the
+ * same instead of applying the weight.
+ *
+ * # Who sets it, and who clears it
+ *
+ * ```
+ *   root / Dialog window / bounded parent      false (the default)
+ *   ├ List row (GrMobList's LazyColumn item)    true: a lazy item is measured
+ *   │                                                 unbounded, like a scroll
+ *   └ Scroll's content (GrMobScroll)            true: measured unbounded
+ *     ├ FlexGrow child, heightIn(min=viewport)  false: weights divide the min
+ *     │                                               (Screen{Fill, Scroll})
+ *     ├ node with a points Height (RenderNode)  false: a definite height
+ *     ├ stretched Row's children (GrMobRow)     false: IntrinsicSize.Max pins
+ *     └ Card > DataTable Column                 true, inherited
+ *       └ List FlexGrow(1)                      no weight: content height
+ * ```
+ *
+ * A Modal decides for its own content column (GrMobModal): true when the
+ * column scrolls with no minimum, false when a growing child has been given
+ * the window as a minimum. A percentage Height inherits, because it resolves
+ * to something only when the parent's height is already definite.
+ *
+ * A composition local rather than BoxWithConstraints in every Column: a
+ * SubcomposeLayout cannot answer intrinsic measurements, and a Row with
+ * AlignItems(stretch) measures its children's intrinsic height
+ * (stretchRowHeight), so a Column with a growing Spacer inside such a Row would
+ * have thrown.
+ */
+val LocalGrMobUnboundedHeight = compositionLocalOf { false }
+
+/**
+ * Whether the Row being composed has no width of its own to divide among
+ * FlexGrow children: true inside a horizontal Scroll's content, until a
+ * points Width gives one back. The horizontal twin of
+ * [LocalGrMobUnboundedHeight].
+ *
+ * # The defect it exists for
+ *
+ * A Row divides weight out of its maximum width, or its minimum when that is
+ * infinite. core.Horizontal() Scroll content is measured with an infinite
+ * width and no minimum, so a FlexGrow child of a Row there, at any depth,
+ * was measured at zero and vanished. With this local, RowChildren gives such
+ * a child its content width instead of a weight.
+ *
+ * That matches CSS whenever the strip's content already fills or overflows
+ * the viewport: there is no positive free space, so flex-grow hands out
+ * nothing. A strip SHORTER than its viewport, where CSS gives the leftover
+ * width to the growers, is laid out by GrMobGrowStrip instead, which knows the
+ * viewport width and hands each grower its content width plus its share as a
+ * minimum; the vertical case does the same with GrMobScroll's growMinHeight.
+ *
+ * ```
+ *   root / bounded parent                          false (the default)
+ *   └ horizontal Scroll's content (GrMobScroll)    true: measured unbounded
+ *     ├ node with a points Width (RenderNode)      false: a definite width
+ *     └ Row / Column descendants                   true, inherited
+ *       └ Row > FlexGrow child                     no weight: content width
+ * ```
+ */
+val LocalGrMobUnboundedWidth = compositionLocalOf { false }
+
+/** A Width that is a definite length on its own: points, not "auto" or a percentage. */
+private fun hasPointsWidth(s: GrMobStyle?): Boolean {
+    val w = s?.width ?: return false
+    if (w.isEmpty() || w == "auto" || w.endsWith("%")) return false
+    return w.removeSuffix("px").toFloatOrNull() != null
+}
+
+/** A Height that is a definite length on its own: points, not "auto" or a percentage. */
+private fun hasPointsHeight(s: GrMobStyle?): Boolean {
+    val h = s?.height ?: return false
+    if (h.isEmpty() || h == "auto" || h.endsWith("%")) return false
+    return h.removeSuffix("px").toFloatOrNull() != null
+}
+
+/**
+ * This node's effective disabled state: its own flag, or an ancestor's.
+ *
+ * `internal` rather than `private`: Kotlin's `private` on a top-level
+ * declaration is file-private, and GrMobCodeEditor.kt asks the same question of
+ * the same node. Module-wide is the accurate visibility for a helper the
+ * runtime's own widget files share and nothing outside the module should see.
+ */
+@Composable
+internal fun GrMobNode.isDisabled(): Boolean =
+    style?.disabled == true || LocalGrMobDisabled.current
+
+@Composable
+fun GrMobRoot(runtime: GrMobRuntime) {
+    // The painted SafeAreas' claims on the system bars; see GrMobSurface.kt.
+    val barClaims = remember { systemBarClaims() }
+    CompositionLocalProvider(
+        LocalGrMobRuntime provides runtime,
+        LocalSystemBarClaims provides barClaims,
+    ) {
+        // key() on the root's key, as RenderChildren does for every child. The
+        // root is otherwise always the same unkeyed slot, so a "replace" of the
+        // whole tree swapped the data but kept every remember{} below it —
+        // rememberScrollState included, which is how a lesson opened by
+        // "Next ›" inherited the previous lesson's scroll offset. core.Navigator
+        // keys each route's root by its stack frame (withFrameKey), so a new
+        // frame is a new group here and its state starts fresh. An empty key
+        // (no Navigator at the root) keys on "" and behaves as before.
+        //
+        // ShellMaterialTheme gives Material's own chrome (a TabRow's strip, a
+        // menu's surface) and ink the tree leaves unstated the scheme of the
+        // colour under the bars, dark over a dark page (N-086; GrMobSurface.kt).
+        ShellMaterialTheme({ runtime.store.root }, barClaims) {
+            runtime.store.root?.let { root -> key(root.key) { RenderNode(root) } }
+        }
+        // After the tree, so its SideEffect runs after the SafeAreas' claims
+        // have joined; see ShellSurface. The window's surface and bar icons
+        // come from the Go tree, not the system's dark mode (N-085).
+        runtime.store.root?.let { root -> ShellSurface(root, barClaims) }
+        // TalkBack stays on the control keyboard focus moves to, off screen
+        // ones included (N-058); see GrMobFocusAnnouncer.kt.
+        AnnounceFocusMovesToScreenReader()
+    }
+}
+
+/**
+ * `extra` carries parent-scope modifiers (Row/Column weight) that only the
+ * parent can construct; see GrMobStyle.boxModifier.
+ */
+@Composable
+fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
+    if (node.style?.display == "none") return // not composed at all; "hidden" keeps space
+
+    // core.OnBack: the system back button and gesture, at the funnel every node
+    // passes through, so any node type can claim it.
+    //
+    // BackHandler registers with the Activity's OnBackPressedDispatcher while
+    // it is composed and unregisters when it leaves, so presence of the prop is
+    // the whole enabled state — no flag crosses the bridge. The dispatcher runs
+    // the most recently registered enabled callback, which is what makes the
+    // innermost node win (see core.OnBack). With none composed, the dispatcher
+    // falls through to the Activity's default and the app is left.
+    //
+    // Called only when the prop is present, not as BackHandler(enabled = ...)
+    // on every node: a registered-but-disabled callback per node would put the
+    // whole tree in the dispatcher. The `if` is a group of its own in the
+    // Compose compiler's output, so toggling it leaves RenderNodeContent's
+    // positional state below it intact.
+    //
+    // The lambda reads `onBack` from this composition; BackHandler holds it
+    // through rememberUpdatedState, so a callback ID that changes on a later
+    // pass is the one dispatched without re-registering.
+    val onBack = node.stringProp("onBack")
+    if (onBack.isNotEmpty()) {
+        val runtime = LocalGrMobRuntime.current
+        BackHandler { runtime.click(onBack) }
+    }
+
+    // core.KeyboardAware, applied at the one funnel every node passes through
+    // rather than at each container that might want it. It lands between the
+    // parent-scope modifiers and the node's own (boxModifier starts from
+    // `extra`), which is exactly where it has to be for a Scroll: constraints
+    // flow left to right, so an inset written before verticalScroll shrinks
+    // the *viewport*, while one written after would pad the scrolled content
+    // and leave the viewport still claiming the rows the keyboard covers.
+    var mods = extra.keyboardInset(node)
+    // core.ScrollIntoView's target (core/scroll_to.go). Only a stamped node
+    // pays for the requester; the `if` is its own group, as onBack's is.
+    val scrollEpoch = node.intProp("scrollEpoch")
+    if (scrollEpoch > 0) mods = mods.then(scrollCommand(scrollEpoch))
+
+    // Opening the disabled scope here, once, rather than inside every control
+    // means a container's flag reaches leaves it does not know about. The
+    // provider call itself is always made, with nothing in it when nothing
+    // changes, so that a node keeps its state when a flag flips (N-106; see
+    // the call at the end of this function).
+    //
+    // The unbounded-height local is closed the same way, and only where it
+    // changes: a node with a points Height gives its subtree a definite height
+    // to divide again (see LocalGrMobUnboundedHeight). A points Width does the
+    // same for the unbounded-width local (LocalGrMobUnboundedWidth).
+    //
+    // A named control opens LocalGrMobNamedControl for its subtree the same
+    // way, so the Text inside it stops speaking over its name. The node itself
+    // is inside the scope too, which is why GrMobText asks namesItsContent of
+    // its own node before going quiet.
+    //
+    // The values that change are collected and provided in one call, rather
+    // than one `when` arm per combination: eight independent values would be
+    // 256 arms. An unchanged tree provides no values.
+    val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
+    val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
+    val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
+    val named = !LocalGrMobNamedControl.current && namesItsContent(node)
+    // What a labelled node already says, for the Texts merged into it; see
+    // LocalGrMobGroupSaid. Unlike the flags above this one is *replaced* at
+    // each labelled node rather than latched on, because Compose's merge
+    // stops at a node that merges its own descendants. An unlabelled node
+    // says nothing of its own, so `said` is empty and the scope is inherited.
+    val said = spokenByLabel(node)
+    val says = said.isNotEmpty() && said != LocalGrMobGroupSaid.current
+    // core.Inert, and every node under it, takes no keyboard focus; see
+    // LocalGrMobInert for why every node rather than the inert one alone.
+    val inertHere = LocalGrMobInert.current || node.style?.inert == true
+    val inert = inertHere && !LocalGrMobInert.current
+    if (inertHere) mods = Modifier.focusProperties { canFocus = false }.then(mods)
+    // A radiogroup's size and each radio's place in it; see
+    // LocalGrMobRadioPositions. Both are extra semantics modifiers on the
+    // node's own layout node, so they land in the same semantics node as
+    // boxModifier's role and label. The walk sits behind derivedStateOf so a
+    // selection, which changes a radio's style, re-runs it without
+    // re-providing an unchanged answer.
+    val role = node.style?.accessibilityRole
+    val positions = if (role == "radiogroup") {
+        remember(node) { derivedStateOf { radioPositions(node) } }.value
+    } else null
+    if (positions != null && positions.count > 0) {
+        val n = positions.count
+        mods = mods.semantics { collectionInfo = CollectionInfo(rowCount = n, columnCount = 1) }
+    }
+    if (role == "radio") {
+        val place = LocalGrMobRadioPositions.current?.index?.get(node)
+        if (place != null) {
+            mods = mods.semantics {
+                collectionItemInfo = CollectionItemInfo(
+                    rowIndex = place, rowSpan = 1, columnIndex = 0, columnSpan = 1,
+                )
+            }
+        }
+    }
+    val group = positions != null && positions != LocalGrMobRadioPositions.current
+    // core.TextColor on a container is inherited by every Text under it that
+    // states none, as CSS's `color` is on the web. Material's Text already
+    // falls back to LocalContentColor when its style has no colour, so the
+    // container provides it. Without this a plain core.Text drew Material's
+    // default black whatever its container said: the tutorial's dark page
+    // on the emulator had black names and numbers on a dark card, where the
+    // browser drew them in the page's ink. Only where it changes, like the
+    // flags above.
+    val ink = node.style?.textColor
+    val inks = ink != null && node.children.isNotEmpty() && ink != LocalContentColor.current
+    // One call site, always, with nothing provided when nothing changes
+    // (N-106). This used to call RenderNodeContent directly when no flag was
+    // set and inside CompositionLocalProvider when one was. Those are two
+    // call sites, and Compose keys a composable's state by where it is
+    // called, so a node whose flag flipped had its whole subtree composed
+    // again from scratch. comps.Drawer flips Inert on both its layers at
+    // every open and close. Its panel's remembered Animatables (animatedStyle)
+    // started again at the open position, so the 250ms slide never ran: the
+    // emulator, with animations slowed tenfold, showed the panel fully open
+    // in the first frame after the tap. The screen behind it was composed
+    // again on every toggle too, losing any state it held. An empty provider
+    // is a group and no new values: the price of keeping every node's state
+    // where it is.
+    val provided = buildList<ProvidedValue<*>> {
+        if (disable) add(LocalGrMobDisabled provides true)
+        if (bound) add(LocalGrMobUnboundedHeight provides false)
+        if (boundWidth) add(LocalGrMobUnboundedWidth provides false)
+        if (named) add(LocalGrMobNamedControl provides true)
+        if (inert) add(LocalGrMobInert provides true)
+        if (says) add(LocalGrMobGroupSaid provides said)
+        if (group) add(LocalGrMobRadioPositions provides positions)
+        if (inks) add(LocalContentColor provides ink!!)
+    }
+    CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
+}
+
+/**
+ * A hardware Escape in the Dialog this is composed in runs [dismiss]: an open
+ * Modal is an Escape claim on every host (core.OnEscape).
+ *
+ * # Why the dialog's window, and not the Activity
+ *
+ * While a Dialog is showing its window has the key focus, so a key never
+ * reaches MainActivity.dispatchKeyEvent, where the other claims are found.
+ * And the platform does not map Escape to back for us here: Dialog.onKeyUp
+ * turns KEYCODE_ESCAPE into onBackPressed only when predictive back is off,
+ * and this app's manifest opts in to it. Seen on the emulator: lesson 6.6's
+ * dialog stayed open under `input keyevent KEYCODE_ESCAPE`.
+ *
+ * So the dialog window's callback is wrapped for as long as the content is
+ * composed: an unmodified Escape is taken on key up (the down is consumed
+ * too, so no one else starts tracking it), and every other event goes to the
+ * callback that was there. The original is put back on dispose, before the
+ * window goes.
+ */
+@Composable
+private fun DialogEscape(dismiss: () -> Unit) {
+    val view = LocalView.current
+    val current by rememberUpdatedState(dismiss)
+    DisposableEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        val original = window?.callback
+        if (window != null && original != null) {
+            window.callback = object : android.view.Window.Callback by original {
+                override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                    if (event.keyCode == KeyEvent.KEYCODE_ESCAPE && event.hasNoModifiers()) {
+                        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) current()
+                        return true
+                    }
+                    return original.dispatchKeyEvent(event)
+                }
+            }
+        }
+        onDispose {
+            if (window != null && original != null) window.callback = original
+        }
+    }
+}
+
+/**
+ * core.ScrollIntoView, for the node carrying [epoch]: brought into view once,
+ * the first time this app meets an epoch that high (see
+ * GrMobRuntime.scrollEpochApplied).
+ *
+ * bringIntoView is Compose's own "scroll the least that shows this", through
+ * every scrollable parent: the meaning core gives the command, and the one the
+ * web's scrollIntoView({block: "nearest"}) and SwiftUI's scrollTo(id) have as
+ * well. One frame is awaited first, because the command can name a node
+ * composed in this very pass, which has no layout coordinates yet, and a
+ * requester whose node is not placed does nothing.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun scrollCommand(epoch: Int): Modifier {
+    val runtime = LocalGrMobRuntime.current
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(epoch) {
+        if (epoch <= runtime.scrollEpochApplied) return@LaunchedEffect
+        runtime.scrollEpochApplied = epoch
+        withFrameNanos { }
+        requester.bringIntoView()
+    }
+    return Modifier.bringIntoViewRequester(requester)
+}
+
+@Composable
+private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
+    val style = node.style
+
+    when (node.type) {
+        "Text" -> GrMobText(node, extra)
+        // core.Paragraph: runs of one flow of text; see GrMobParagraph.
+        "Paragraph" -> GrMobParagraph(node, extra)
+        "Button" -> GrMobButton(node, extra)
+
+        "Input" -> GrMobTextField(node, extra)
+        "InputPassword" -> GrMobTextField(node, extra, password = true)
+        "NumericInput" -> GrMobTextField(node, extra, numeric = true)
+        "TextArea" -> GrMobTextField(node, extra, multiline = true)
+        "Select" -> GrMobSelect(node, extra)
+        "Checkbox" -> GrMobCheckbox(node, extra)
+        "Switch" -> GrMobSwitch(node, extra)
+        "Slider" -> GrMobSlider(node, extra)
+        "TextGrid" -> GrMobTextGrid(node, extra)
+        // The programmer's editor. Its rows are a grid's rows and it colours a
+        // BasicTextField with them through a VisualTransformation — see
+        // GrMobCodeEditor.kt, and core/codeeditor.go for why neither Compose
+        // alone nor a Go-side overlay can express this.
+        "CodeEditor" -> GrMobCodeEditor(node, extra)
+        // The prose editor. Its value is a richtext.Doc, mapped to and from an
+        // Editable's spans — and hosted through AndroidView rather than Compose,
+        // which is the one deliberate reach past Compose in this renderer. See
+        // GrMobRichText.kt for the argument.
+        "RichTextEditor" -> GrMobRichTextEditor(node, extra)
+        // A row reached on its own (never from core.TextGrid, which draws
+        // its rows itself) still renders as a line of runs.
+        "GridRow" -> GrMobGridRow(node, TextStyle.Default)
+
+        "Row" -> GrMobRow(node, extra)
+        // Card = Column whose Go theme style carries the card look. Box =
+        // Column with no theme base at all: core.Box is documented as one of
+        // the flex-style containers ("Row, Column, Card, Box, List share one
+        // argument contract"), differing from Column only in carrying no
+        // theme style, and both DOM targets stack its children — the WASM
+        // runtime lists it in STACK_CONTAINERS. This was a Compose Box, which
+        // is a ZStack: two children drew on top of each other on device and
+        // side by side down the page in the browser. See GrMobColumn.
+        "Column", "Card", "Box" -> GrMobColumn(node, extra)
+        // The one container in the vocabulary that *is* an overlay, which is
+        // what the arm above stopped being. A Compose Box is the construct
+        // core.ZStack was named for on this side; mobile/verify's
+        // TestNativeZStackOverlaysItsChildren pins the arm to it.
+        "ZStack" -> GrMobZStack(node, extra)
+        "List" -> GrMobList(node, extra)
+        // core.Spacer: a fixed void that does not give way.
+        //
+        // This used to be `Spacer(Modifier.size(...))` with no boxModifier on
+        // it, which made a Spacer the one node type on this target whose own
+        // Style was dropped whole — both DOM renderers have always applied it
+        // (htmlout's spacerChassis, the WASM runtime's applySpacerChassis), so
+        // a hand-assembled Spacer carrying a Background was coloured in a
+        // browser and invisible on a phone, along with its margin, its
+        // accessibility props and its callback IDs.
+        //
+        // The size prop is the node type's fixed look and goes *inside* the
+        // author's box, which is what makes the author win: Compose resolves
+        // constraints outside-in, so a stated Width already fixes them by the
+        // time Modifier.size is reached and size() coerces itself into what it
+        // was given. That per-axis result is the rule applySpacerChassis
+        // states explicitly and htmlout gets from CSS declaration order, and it
+        // is why no per-axis test is needed here — one `.size()` is the whole
+        // of it. The background lands right for the same reason: boxModifier's
+        // fill is drawn at the node's measured size, which is the author's
+        // width by 10 rather than a 10x10 square in a 200-point hole.
+        //
+        // A hand-assembled Spacer's children, which this arm used to drop.
+        //
+        // A Compose `Spacer` is a leaf and both DOM renderers emit a Spacer's
+        // children like any other element's, so a node core cannot build but
+        // Go can hand-assemble rendered its subtree in a browser and nothing
+        // at all on device. That is the last of the four properties this arm
+        // was silently discarding, and it goes the same way the other three
+        // did: toward what the DOM targets already do.
+        //
+        // GrMobColumn rather than a Box, for the reason the "Column", "Card",
+        // "Box" arm above gives — a Compose Box overlays, and the DOM stacks.
+        // Spacer is in htmlout's stackAxes on "column" so that both halves of
+        // this agreement are stated in one place rather than invented here:
+        // a Spacer with children is a Box with a fixed size.
+        //
+        // The modifier chain is unchanged. GrMobColumn applies
+        // `boxModifier(extra, gestureModifier(node)).then(outer)`, which is
+        // exactly what this arm spelled out, so a childless Spacer measures
+        // and paints as it did — an empty Column with a fixed size is the
+        // same box a Spacer with a fixed size was.
+        //
+        // One thing does change for a childless Spacer: GrMobColumn reads
+        // animatedStyle, so a Spacer carrying a Transition now animates its
+        // own style the way every other container does. It could not before,
+        // and nothing wanted the exception.
+        "Spacer" -> GrMobColumn(
+            node, extra,
+            outer = Modifier.size(node.intProp("size").dp),
+        )
+        "Scroll" -> GrMobScroll(node, extra)
+
+        // The safe area is the system bars and the display cutout — not the
+        // IME. WindowInsets.safeDrawing bundles the keyboard in with the rest,
+        // which would make every screen resize whole whenever a field is
+        // focused and, worse, consume the IME inset so that a Scroll asking
+        // for it with keyboardInset would receive nothing (nested window-inset
+        // modifiers consume what they apply). Keeping the keyboard out of this
+        // is what leaves it to the region that actually scrolls — the same
+        // split SwiftUI makes, where the keyboard is its own safe-area region.
+        // A vertical stack, not a Box, for the reason the Box arm above gives:
+        // a SafeArea is a flex column on both DOM targets (it is in the WASM
+        // runtime's STACK_CONTAINERS), so two children stacked in a browser
+        // and drew on top of each other here. The single-child case moved
+        // too, and in the same direction: a Compose Box lets its child size
+        // to its own content, so a screen's content column hugged its widest
+        // child instead of filling the width the way `align-items: stretch`
+        // gives it on the web. GrMobColumn's stretch default is what supplies
+        // that — the same correction isColumnStretch describes for Column.
+        //
+        // Routing through GrMobColumn also wires the gesture props, which a
+        // SafeArea never had here and both DOM targets have always honored.
+        "SafeArea" -> {
+            // A painted SafeArea is what sits under the bars, so it decides
+            // their icons; ShellSurface writes them (GrMobSurface.kt).
+            style?.background?.let { ClaimSystemBars(it) }
+            GrMobColumn(
+                node, extra,
+                outer = Modifier.windowInsetsPadding(
+                    WindowInsets.safeDrawing.exclude(WindowInsets.ime)
+                ),
+            )
+        }
+
+        "TabView" -> GrMobTabView(node, extra)
+        "Modal" -> GrMobModal(node)
+        "Image" -> {
+            // Coil 2 has no fetcher for data: URIs, so one is decoded to its
+            // bytes here (grMobImageModel, GrMobDataUri.kt) and every other
+            // src passes through. Remembered per src because a ByteArray's
+            // equality is its identity: a fresh decode on each recomposition
+            // would read to AsyncImage as a new model and reload the image.
+            val src = node.stringProp("src")
+            val model = remember(src) { grMobImageModel(src) }
+            AsyncImage(
+                model = model,
+                contentScale = contentScaleFor(node.stringProp("contentMode")),
+                // The Go-side AccessibilityLabel style prop is the first choice
+                // for the description; the legacy "alt" prop remains a fallback.
+                // The label is delivered through AsyncImage's own semantics slot,
+                // so it is stripped from the style handed to boxModifier — both
+                // paths setting contentDescription would double-announce.
+                contentDescription = (style?.accessibilityLabel ?: "")
+                    .ifEmpty { node.stringProp("alt") }.ifEmpty { null },
+                modifier = style?.copy(accessibilityLabel = "", accessibilityHint = "")
+                    .boxModifier(extra, gestureModifier(node)),
+            )
+        }
+
+        // Camera capture needs a CameraX integration pass of its own; until
+        // then render the styled surface and any overlay so layouts hold up.
+        "CameraView" -> Box(style.boxModifier(extra)) { RenderChildren(node) }
+
+        // The live map (core.MapView). Its Marker children are data rather than
+        // composables — GrMobMapView reads them off node.children itself and
+        // turns them into osmdroid overlays, the way GrMobTextGrid reads its
+        // rows — so RenderChildren is deliberately not called here. See
+        // GrMobMapView.kt.
+        "MapView" -> GrMobMapView(node, extra)
+
+        // A Marker reached on its own, outside a map: nothing. It is data for
+        // the node above it, and a box for one would be an empty rectangle in a
+        // layout. The arm exists so the dispatch says so rather than falling
+        // through to the container default, which would draw one.
+        "Marker" -> Unit
+
+        // A vector drawing (core.Canvas). Its CanvasShape children are data
+        // read in the draw phase, like a map's markers — see GrMobCanvas.kt.
+        "Canvas" -> GrMobCanvas(node, animatedStyle(style).boxModifier(extra, gestureModifier(node)))
+
+        // A shape reached on its own, outside a canvas: nothing, for the reason
+        // a lone Marker is nothing. A text shape (core.CanvasText) likewise.
+        "CanvasShape" -> Unit
+        "CanvasText" -> Unit
+
+        // Fragment and Theme are grouping nodes with no visual box of their
+        // own: emit the children inline into whatever scope we're in.
+        "Fragment", "Theme" -> RenderChildren(node)
+
+        // Unknown node type (newer Go core than this runtime): render the
+        // children so the subtree isn't a dead end.
+        else -> Column(style.boxModifier(extra)) { ColumnChildren(node) }
+    }
+}
+
+/** Children of a non-flex container; keyed so reorder/replace keeps sibling state. */
+@Composable
+private fun RenderChildren(node: GrMobNode) {
+    node.children.forEachIndexed { i, child ->
+        key(child.key.ifEmpty { i }) { RenderNode(child) }
+    }
+}
+
+/**
+ * A core.TextGrid: a column of monospace rows, each an AnnotatedString built
+ * from the row's runs. The grid's own text style (size, colour) is the base
+ * every run inherits; a run's fg/bg and attribute bits override it as
+ * SpanStyles. Rows never wrap — a terminal row is exactly as wide as its
+ * cells — so a grid wider than the screen scrolls sideways instead.
+ *
+ * Rows are keyed by index rather than read through RenderNode: the Go
+ * reconciler pairs them by index too, and an update-props on one row
+ * mutates that GrMobNode's props alone, which recomposes only that row's
+ * Text. That per-row invalidation is the whole reason the grid is a
+ * container of rows rather than one prop.
+ */
+@Composable
+private fun GrMobTextGrid(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    val base = textStyle(s)
+    Column(
+        s.boxModifier(extra, gestureModifier(node))
+            // WhenBounded: a grid inside a sideways Scroll is measured under an
+            // infinite width, and a bare horizontalScroll throws there.
+            .horizontalScrollWhenBounded(rememberScrollState())
+    ) {
+        node.children.forEachIndexed { i, row ->
+            key(i) { GrMobGridRow(row, base) }
+        }
+    }
+}
+
+/**
+ * One row of a core.TextGrid. The runs prop is a list of maps with the
+ * short keys core.GridRun's json tags declare: t (text), fg, bg (CSS hex
+ * colours, absent to inherit) and a (the Grid* attribute bits: 1 bold,
+ * 2 dim, 4 italic, 8 underline, 16 strike). Dim is the one bit Compose
+ * has no direct spelling for; it is drawn by fading the run's colour, which
+ * needs a colour to fade, so a dim run with no colour of its own fades the
+ * grid's text colour when that is set and is otherwise left at full weight.
+ */
+@Composable
+private fun GrMobGridRow(node: GrMobNode, base: TextStyle) {
+    val runs = node.props["runs"] as? List<*> ?: emptyList<Any?>()
+    val text = buildAnnotatedString {
+        for (raw in runs) {
+            val run = raw as? Map<*, *> ?: continue
+            val a = (run["a"] as? Number)?.toInt() ?: 0
+            var fg = GrMobStyle.parseColor(run["fg"] as? String)
+            if (a and 2 != 0) {
+                val dimmed = fg ?: base.color.takeIf { it != Color.Unspecified }
+                if (dimmed != null) fg = dimmed.copy(alpha = dimmed.alpha * 0.6f)
+            }
+            val decorations = mutableListOf<TextDecoration>()
+            if (a and 8 != 0) decorations.add(TextDecoration.Underline)
+            if (a and 16 != 0) decorations.add(TextDecoration.LineThrough)
+            withStyle(SpanStyle(
+                color = fg ?: Color.Unspecified,
+                background = GrMobStyle.parseColor(run["bg"] as? String) ?: Color.Unspecified,
+                fontWeight = if (a and 1 != 0) FontWeight.Bold else null,
+                fontStyle = if (a and 4 != 0) FontStyle.Italic else null,
+                textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
+            )) { append(run["t"] as? String ?: "") }
+        }
+    }
+    Text(
+        text = text,
+        style = base.copy(fontFamily = FontFamily.Monospace),
+        softWrap = false,
+        maxLines = 1,
+    )
+}
+
+/**
+ * The color half of Transition support: when the style declares a
+ * Transition, the background is replaced by a value animated toward the
+ * current target, so an update-style patch fades the color instead of
+ * snapping it. A highlight *appearing* on a previously unpainted node (the
+ * feed row selection pattern) fades in as pure alpha rather than popping —
+ * see the hue-snap note inside.
+ *
+ * This lives at the composition layer (not boxModifier) because the animated
+ * value is remembered state tied to the node's composition position — the
+ * size half of Transition (animateContentSize) is a plain modifier and lives
+ * in boxModifier. A `replace` patch swaps the node instance and therefore
+ * the composition position, so replaced nodes snap — which matches the Go
+ * reconciler's intent (replace = a different thing, not a changed one).
+ */
+@Composable
+private fun animatedStyle(s: GrMobStyle?): GrMobStyle? {
+    if (s == null || s.transitionMs <= 0) return s
+
+    // Driven by hand (Animatable rather than animateColorAsState) because a
+    // null background must fade as pure alpha, never through gray:
+    // Color.Transparent is transparent BLACK, and interpolating straight at
+    // it darkens the highlight before it disappears — measured on-device as
+    // (169,171,175) mid-fade between white and #E8F0FE. So an appearing
+    // color first snaps invisibly to "target at alpha 0" (fixing the hue),
+    // and a disappearing one animates to "current hue at alpha 0".
+    val bg = remember { Animatable(s.background ?: Color.Transparent) }
+    LaunchedEffect(s.background, s.transitionMs) {
+        val target = s.background
+        if (target != null) {
+            if (bg.value.alpha == 0f) bg.snapTo(target.copy(alpha = 0f))
+            bg.animateTo(target, s.transitionTween())
+        } else if (bg.value.alpha > 0f) {
+            bg.animateTo(bg.value.copy(alpha = 0f), s.transitionTween())
+        }
+    }
+    // core.Translate under the same Transition: the four numbers of the two
+    // axes, each animated toward its target. By hand for the same reason as
+    // the colour (the value is remembered at this composition position), and
+    // as four Floats rather than one vector because GrMobShift's amount and
+    // fraction interpolate independently, which is what CSS does between a
+    // percentage and none. The spec comes from the style being moved to, so a
+    // shut style's own Transition times the close. Snaps under "Remove
+    // animations" with everything else here (see transitionTween).
+    val tx = remember { FloatAnimatable(s.translateX.amount) }
+    val txf = remember { FloatAnimatable(s.translateX.fraction) }
+    val ty = remember { FloatAnimatable(s.translateY.amount) }
+    val tyf = remember { FloatAnimatable(s.translateY.fraction) }
+    LaunchedEffect(s.translateX, s.translateY, s.transitionMs) {
+        launch { tx.animateTo(s.translateX.amount, s.transitionTween()) }
+        launch { txf.animateTo(s.translateX.fraction, s.transitionTween()) }
+        launch { ty.animateTo(s.translateY.amount, s.transitionTween()) }
+        launch { tyf.animateTo(s.translateY.fraction, s.transitionTween()) }
+    }
+    // core.Opacity under the same Transition, and the reason the field
+    // exists: a fade. One Float, started at the alpha the node arrived with,
+    // so a node that appears already dimmed does not fade in from opaque.
+    // s.opacity is the resolved alpha (GrMobStyle.alphaOf), so an undeclared
+    // Opacity animates to 1 like any other target and a node that drops the
+    // prop fades back in. coerceIn because an overshooting easing may step
+    // outside [0, 1], where Modifier.alpha throws.
+    val alpha = remember { FloatAnimatable(s.opacity) }
+    LaunchedEffect(s.opacity, s.transitionMs) {
+        alpha.animateTo(s.opacity, s.transitionTween())
+    }
+    return s.copy(
+        background = bg.value,
+        opacity = alpha.value.coerceIn(0f, 1f),
+        translateX = GrMobShift(tx.value, txf.value),
+        translateY = GrMobShift(ty.value, tyf.value),
+    )
+}
+
+/**
+ * Go's core.KeyboardAware: shrink this node by the software keyboard's height
+ * while the keyboard is showing.
+ *
+ * On a scrolling node that means the viewport ends above the keys, so
+ * Compose's own bring-the-focused-field-into-view has somewhere visible to put
+ * the field. On a non-scrolling one it means the whole subtree lifts — which
+ * is how a screen with a docked composer keeps it reachable.
+ *
+ * It reads WindowInsets.ime, which only reports a height once the window has
+ * stopped fitting the system windows itself:
+ *
+ *   MainActivity          enableEdgeToEdge()   (insets become the app's job)
+ *   AndroidManifest.xml   windowSoftInputMode="adjustResize"
+ *
+ * Both are set. Were they not, the platform would resize the whole window and
+ * deliver the IME inset already consumed, making this a no-op rather than a
+ * conflict — the app would still yield to the keyboard, just wholesale.
+ */
+private fun Modifier.keyboardInset(node: GrMobNode): Modifier =
+    if (node.boolProp("keyboardAware")) this.imePadding() else this
+
+/**
+ * Tap/long-press wiring for nodes that don't draw their own control (Button
+ * and the inputs handle their own interaction). Empty when the node carries
+ * neither callback, so plain content pays nothing. combinedClickable also
+ * registers the click/long-click accessibility actions, so a gesture-bearing
+ * row is activatable from TalkBack, not just by touch.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun gestureModifier(node: GrMobNode): Modifier {
+    val onClick = node.stringProp("onClick")
+    val onLongPress = node.stringProp("onLongPress")
+    if (onClick.isEmpty() && onLongPress.isEmpty()) return Modifier
+    // A disabled node keeps its callback IDs (Go still has the handlers
+    // registered — see core.Style.Disabled) and simply stops being
+    // clickable, which also removes the click/long-click accessibility
+    // actions. Dropping the modifier rather than passing
+    // `combinedClickable(enabled = false)` also drops the ripple, which is
+    // what a disabled surface should look like.
+    if (node.isDisabled()) return Modifier
+    val runtime = LocalGrMobRuntime.current
+    return Modifier
+        .combinedClickable(
+            onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
+            onLongClick = if (onLongPress.isEmpty()) null else {
+                { runtime.click(onLongPress) }
+            },
+        )
+        .grMobDisclosure(node.style?.accessibilityExpanded ?: "") {
+            if (onClick.isNotEmpty()) runtime.click(onClick)
+        }
+}
+
+/**
+ * Go's core.ExpandedState onto Compose semantics.
+ *
+ * # Why this is the one accessibility field that is not in boxModifier
+ *
+ * Every other one — the label, the hint, the role, the selected state — is a
+ * semantics *property*: a fact about the node that GrMobStyle carries and the
+ * style layer can state on its own. Compose has no expanded property. What it
+ * has is a pair of **actions**, `expand()` and `collapse()`, which Compose maps
+ * onto AccessibilityNodeInfo's ACTION_EXPAND and ACTION_COLLAPSE, and which
+ * TalkBack offers as "double-tap to expand" / "to collapse".
+ *
+ * An action has to *do* something, and the only thing that can open this
+ * disclosure is the callback the node's own tap already runs. So the mapping
+ * needs the click ID, which lives on the node rather than on the style — which
+ * is why it is here, in the gesture layer, and not beside grMobSelected.
+ *
+ * The consequence is worth stating plainly rather than treating as a detail: a
+ * node that declares an expanded state and registers no onClick gets nothing.
+ * That is the honest outcome. An expand action Compose cannot perform would be
+ * announced to TalkBack, accepted, and do nothing, which is worse than a
+ * disclosure that is merely quiet — and a disclosure with no handler cannot be
+ * opened by touch either, so there is no reader being denied something a
+ * sighted user has.
+ *
+ * # Which action is offered is the inverse of the state
+ *
+ * A *closed* disclosure offers `expand` and an open one offers `collapse`. The
+ * transposition is the bug this shape invites, and it is invisible on any
+ * screen: both arms compile, both wire the same callback, and both toggle the
+ * section correctly on activation. Only the announcement is wrong — a shut
+ * accordion inviting the reader to collapse it.
+ *
+ * ExpandedUnset ("") adds no modifier at all, so the several hundred nodes of
+ * a tree that are not disclosures pay nothing. An unrecognized value falls into
+ * the same arm rather than guessing, on the rule the rest of this file follows.
+ *
+ * The two literals are Go's core.ExpandedState verbatim; the values are ARIA's
+ * spellings and this platform compares against them directly, the way
+ * grMobSelected does. mobile/verify/expanded_test.go holds these arms against
+ * core.ExpandedStates().
+ */
+private fun Modifier.grMobDisclosure(state: String, toggle: () -> Unit): Modifier =
+    when (state) {
+        "false" -> this.semantics { expand { toggle(); true } }
+        "true" -> this.semantics { collapse { toggle(); true } }
+        else -> this
+    }
+
+/**
+ * core.ContentMode -> Compose ContentScale. An absent or unknown mode is Fit,
+ * which is both core.Image's documented default and what this renderer drew
+ * before the prop existed, so existing trees are unchanged.
+ *
+ * ContentScale.None (Center) leaves the bitmap at its intrinsic pixel size;
+ * AsyncImage's default alignment is already Center, so "no scaling, centered"
+ * needs nothing further.
+ *
+ * Every mode core declares is listed explicitly, including "fit" — which the
+ * `else` arm below would already have handled. That redundancy is the point:
+ * `else` swallows an unrecognized mode silently, so a fifth ContentMode added
+ * to core would render here as Fit while both DOM targets fell back to the
+ * browser default, and nothing anywhere would fail. Listing the modes makes
+ * the coverage readable from outside, and mobile/verify/contentmode_test.go
+ * reads it — it compares these arms with core.ContentModes() under a plain
+ * `go test ./...`. Keep the arms one per line, string-literal first, and keep
+ * the `else` arm; that is the shape the parse requires.
+ */
+private fun contentScaleFor(mode: String): ContentScale = when (mode) {
+    "fit" -> ContentScale.Fit
+    "fill" -> ContentScale.Crop
+    "stretch" -> ContentScale.FillBounds
+    "center" -> ContentScale.None
+    // Absent (core.imageNode omits the prop entirely) or a mode this build of
+    // the runtime predates.
+    else -> ContentScale.Fit
+}
+
+// ---------------------------------------------------------------------------
+// Leaf components
+// ---------------------------------------------------------------------------
+
+/** The roles that make a node a live region on this platform; see roleSemantics. */
+private val grMobLiveRoles = setOf("status", "alert", "log")
+
+@Composable
+private fun GrMobText(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    // core.MaxLines. Ellipsis only when capped: Clip, Text's default, is what
+    // an uncapped Text has always drawn, and an ellipsis policy on text that
+    // is never cut would change nothing but read as if it might.
+    val cap = s?.maxLines ?: 0
+    // Inside a named control the name stands for this text, so the text is
+    // taken out of the accessibility tree rather than read after the name;
+    // see LocalGrMobNamedControl. Not when this Text is the named control
+    // itself: then its label is the thing being read. Appended after
+    // boxModifier so it clears the semantics Text adds inside the chain.
+    val quiet = LocalGrMobNamedControl.current && !namesItsContent(node)
+    val content = node.stringProp("content")
+    // The other half of the same problem, for a labelled *group*, whose
+    // content is not replaced by its name: this Text repeats the group's own
+    // label or its stated value, so it is dropped rather than heard a second
+    // time (see LocalGrMobGroupSaid). Asked only of a Text that states no
+    // label of its own — a labelled Text is inside the scope it opened, and
+    // would otherwise silence itself.
+    val echo = node.style?.accessibilityLabel.isNullOrEmpty() &&
+        content.trim().lowercase() in LocalGrMobGroupSaid.current
+    // A live region (core.RoleStatus, RoleAlert, RoleLog) on a Text with no
+    // label of its own takes its content as its content description as well
+    // (N-108). TalkBack announced a live region whose description changed,
+    // and said nothing when only its text did. Measured on the emulator with
+    // a RoleStatus Text counting every 5s: silent for 32s as text alone,
+    // and every change announced ("Probe status 4" … "8") once the same
+    // words were its description. comps.Wizard's "Step 2 of 3" line was the
+    // casualty, and with it every step change on Android, since Compose
+    // cannot move TalkBack's focus to the new title. The description is the
+    // text itself, so nothing new is said, and it is read once.
+    val live = node.style?.accessibilityRole in grMobLiveRoles &&
+        node.style?.accessibilityLabel.isNullOrEmpty()
+    Text(
+        text = content,
+        modifier = s.boxModifier(extra, gestureModifier(node))
+            .then(if (live) Modifier.semantics { contentDescription = content } else Modifier)
+            .then(if (quiet || echo) Modifier.clearAndSetSemantics { } else Modifier),
+        style = textStyle(s),
+        maxLines = if (cap > 0) cap else Int.MAX_VALUE,
+        overflow = if (cap > 0) TextOverflow.Ellipsis else TextOverflow.Clip,
+    )
+}
+
+/**
+ * core.Paragraph: one Text of an AnnotatedString, a span per run.
+ *
+ * The runs prop is a list of maps with core/paragraph.go's keys: t, and b, i,
+ * u, s, c (bold, italic, underline, strike, code) present as 1, fg a colour,
+ * cb a void callback ID. The paragraph's own style is the base TextStyle, as a
+ * Text's is, and each run's SpanStyle layers over it.
+ *
+ * A run with a callback is a LinkAnnotation.Clickable around its span, which
+ * is Compose's own inline link: TalkBack lists it among the paragraph's links
+ * and activates it, and a tap on its glyphs runs the listener. The tag is the
+ * callback ID, which is unique within the paragraph (IDs are per pass and per
+ * registration). No link style is passed: Go has already resolved the run's
+ * colour (core draws a link in the theme's Primary unless the run names one),
+ * and the marks are the caller's, underline included.
+ */
+@Composable
+private fun GrMobParagraph(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val s = animatedStyle(node.style)
+    val runs = node.props["runs"] as? List<*> ?: emptyList<Any?>()
+    val text = buildAnnotatedString {
+        for (raw in runs) {
+            val run = raw as? Map<*, *> ?: continue
+            val on = { key: String -> (run[key] as? Number)?.toInt()?.let { it != 0 } ?: (run[key] == true) }
+            val decorations = mutableListOf<TextDecoration>()
+            if (on("u")) decorations.add(TextDecoration.Underline)
+            if (on("s")) decorations.add(TextDecoration.LineThrough)
+            val style = SpanStyle(
+                color = GrMobStyle.parseColor(run["fg"] as? String) ?: Color.Unspecified,
+                fontWeight = if (on("b")) FontWeight.Bold else null,
+                fontStyle = if (on("i")) FontStyle.Italic else null,
+                fontFamily = if (on("c")) FontFamily.Monospace else null,
+                textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
+            )
+            val t = run["t"] as? String ?: ""
+            val cb = run["cb"] as? String ?: ""
+            if (cb.isNotEmpty()) {
+                withLink(LinkAnnotation.Clickable(tag = cb) { runtime.click(cb) }) {
+                    withStyle(style) { append(t) }
+                }
+            } else {
+                withStyle(style) { append(t) }
+            }
+        }
+    }
+    val cap = s?.maxLines ?: 0
+    Text(
+        text = text,
+        modifier = s.boxModifier(extra, gestureModifier(node)),
+        style = textStyle(s),
+        maxLines = if (cap > 0) cap else Int.MAX_VALUE,
+        overflow = if (cap > 0) TextOverflow.Ellipsis else TextOverflow.Clip,
+    )
+}
+
+// internal rather than private so GrMobCodeEditor.kt can build its own style on
+// top of this one: a code editor is this style plus a monospace family and a
+// smaller default pitch, and restating the whole conversion over there would be
+// a second answer to "what does a Go style mean in Compose".
+internal fun textStyle(s: GrMobStyle?): TextStyle {
+    if (s == null) return TextStyle.Default
+    return TextStyle(
+        color = s.textColor ?: Color.Unspecified,
+        fontSize = if (s.fontSize > 0f) s.fontSize.sp else TextStyle.Default.fontSize,
+        // Go's Weight constants are the CSS numeric scale (200/400/700), which
+        // FontWeight accepts directly.
+        fontWeight = if (s.fontWeight > 0) FontWeight(s.fontWeight) else null,
+        lineHeight = if (s.lineHeight > 0) s.lineHeight.sp else TextStyle.Default.lineHeight,
+        // core.TextAlignments -> Compose's TextAlign. Every value spelled out,
+        // including the one `else` would have produced, because Compose has no
+        // "unset" to fall through to: an unlisted value is not left alone, it
+        // is silently rendered as Start. Held to core.TextAlignments() by
+        // TestKotlinTextAlignCoversEveryTextAlignment in mobile/verify, which
+        // parses these arms out of textStyle — one per line, string literals first, `else ->`
+        // last, and the arm duplicating `else`'s body stays spelled out.
+        //
+        // AlignStretch and AlignBaseline are absent by design: they are
+        // Alignments naming a cross-axis placement, not a text alignment, and
+        // core.TextAlignments() leaves them out for that reason.
+        textAlign = when (s.align) {
+            "start" -> TextAlign.Start
+            "center" -> TextAlign.Center
+            "end" -> TextAlign.End
+            "justify" -> TextAlign.Justify
+            else -> TextAlign.Start
+        },
+    )
+}
+
+@Composable
+private fun GrMobButton(node: GrMobNode, extra: Modifier) {
+    // core.Focus on a Button: a comps.Button with a FocusRef, such as a
+    // Drawer's ✕ (CloseRef) and the ☰ its OnDismiss hands focus back to.
+    // core.FocusTarget stamps the same focusEpoch/focusAction pair on a Button
+    // as on a field, and until this read it nothing here did, so the Drawer's
+    // handoff never happened on Compose: opening it from the keyboard left
+    // focus on the ☰, now inside the inert, hidden screen, and closing it
+    // left focus nowhere. Found on a Galaxy Z Fold6 with a USB keyboard.
+    //
+    // The epoch/action contract is the text field's (see the LaunchedEffect
+    // in GrMobTextField for why a counter and why no mount guard), minus the
+    // soft keyboard. The requester and the focus observer ride `extra`, the
+    // head of the chain every Button path starts from, so they reach the
+    // material3 clickable and the long-press substitute alike.
+    val focusEpoch = node.intProp("focusEpoch")
+    val focusAction = node.stringProp("focusAction")
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(focusEpoch) {
+        if (focusEpoch == 0) return@LaunchedEffect
+        when (focusAction) {
+            // The field's reason for the catch applies: a requester whose
+            // node is composed but not yet placed throws.
+            //
+            // One frame first, which the field does not need. The command
+            // usually lands in the same pass that makes its target focusable
+            // at all: the Drawer opens and its panel stops being inert
+            // (LocalGrMobInert) as the ☰'s handler focuses the ✕. The focus
+            // tree takes that change in at the end of the pass, so a request
+            // made straight away can still see the panel as unfocusable.
+            "focus" -> {
+                withFrameNanos { }
+                runCatching { focusRequester.requestFocus() }
+            }
+            "blur" -> if (focused) focusManager.clearFocus()
+        }
+    }
+    val focusable = extra.focusRequester(focusRequester).onFocusChanged { focused = it.isFocused }
+    GrMobButtonControl(node, focusable)
+}
+
+/** GrMobButton with its focus command wired; see GrMobButton. */
+@Composable
+private fun GrMobButtonControl(node: GrMobNode, extra: Modifier) {
+    // core.OnLongPress on a Button takes a different control, because
+    // material3's Button has no long-click slot and a combinedClickable put
+    // on its modifier would sit *outside* the Button's own clickable and
+    // never see a pointer event. Every other node type gets the gesture from
+    // gestureModifier; a Button draws its own control, which is why the prop
+    // was documented as wired on both natives while this function read
+    // nothing but onClick.
+    //
+    // Only buttons that actually declare the gesture take the substitute, so
+    // the material3 path — and every existing button's ripple, elevation and
+    // accessibility behavior — is untouched.
+    if (node.stringProp("onLongPress").isNotEmpty()) {
+        GrMobLongPressButton(node, extra)
+        return
+    }
+    // A compact button: touchTarget "compact", which only comps.CopyButton
+    // writes. material3's Button has two minimums its parameters do not reach,
+    // and both are switched off here rather than by building the button from
+    // parts, so the ripple, the role and the one merged accessibility node are
+    // material3's own:
+    //
+    //   48dp   the touch-target padding Surface(onClick) lays out around a
+    //          smaller button (minimumInteractiveComponentSize). Unspecified
+    //          in LocalMinimumInteractiveComponentSize turns it off.
+    //   40dp   ButtonDefaults.MinHeight, a defaultMinSize on the content row.
+    //          defaultMinSize applies only when the incoming minimum is zero,
+    //          and Surface passes its own minimum through, so a 1dp minimum
+    //          on the button's modifier leaves it nothing to raise.
+    //
+    // What remains is the button at its padding and label, as SwiftUI and the
+    // web draw it: a tutorial code block's Copy had put its strip at 48dp on
+    // this target alone. The finger still gets 48dp: Compose widens a small
+    // clickable's touch bounds to the platform minimum without laying it out
+    // larger (measured on the emulator: a 47px button, a 126 by 118px
+    // clickable).
+    val compact = node.stringProp("touchTarget") == "compact"
+    CompositionLocalProvider(
+        LocalMinimumInteractiveComponentSize provides
+            if (compact) Dp.Unspecified else LocalMinimumInteractiveComponentSize.current,
+    ) {
+        GrMobMaterialButton(node, extra, compact)
+    }
+}
+
+/** GrMobButton's material3 path; `compact` is explained there. */
+@Composable
+private fun GrMobMaterialButton(node: GrMobNode, extra: Modifier, compact: Boolean) {
+    val runtime = LocalGrMobRuntime.current
+    val s = node.style
+    val onClick = node.stringProp("onClick")
+    // Style properties the Go theme owns are fed into material3's slots
+    // instead of boxModifier: Button draws its own container, so background/
+    // radius/padding must go through its API to keep ripple + a11y correct.
+    val box = buttonBox(s, extra)
+    Button(
+        onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
+        modifier = if (compact) box.heightIn(min = 1.dp).widthIn(min = 1.dp) else box,
+        // The platform disabled state: material3 stops dispatching, drops the
+        // ripple, and marks the node disabled for TalkBack.
+        enabled = !node.isDisabled(),
+        shape = grMobShape(s, defaultRadius = 8f) ?: RoundedCornerShape(8.dp),
+        // The border goes through material3's own slot for the same reason
+        // background and padding do: marginAndSize strips the box-drawing
+        // fields, so boxModifier's Modifier.border never runs for a Button and
+        // core.BorderWidth/BorderColor were silently dropped here. That is what
+        // made comps.Button's EmphasisOutlined — documented as "a 1px rule
+        // in the variant's color" — draw its rule on the web and nothing on
+        // device. material3 insets the stroke inside `shape`, which is the same
+        // placement Modifier.border and SwiftUI's strokeBorder give it.
+        border = borderStroke(s),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = s?.background ?: Color.Unspecified,
+            // A label with no TextColor on a Go Background takes OnGoColor, not
+            // the scheme's onPrimary (GrMobSurface.kt). With neither stated,
+            // container and label are both the scheme's (Unspecified).
+            contentColor = s?.textColor ?: s?.background?.let { OnGoColor } ?: Color.Unspecified,
+            // material3 would otherwise paint its own disabled tones (the
+            // container color at 12% alpha) over whatever the Go theme chose,
+            // so a widget that styles its own disabled look — comps.
+            // Button spends Surface/TextSecondary on it — would be silently
+            // overruled. Feeding the same colors into both slots keeps Go the
+            // single source of truth for the palette.
+            disabledContainerColor = s?.background ?: Color.Unspecified,
+            disabledContentColor = s?.textColor ?: Color.Unspecified,
+        ),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = (s?.padding?.left ?: 16).dp, top = (s?.padding?.top ?: 10).dp,
+            end = (s?.padding?.right ?: 16).dp, bottom = (s?.padding?.bottom ?: 10).dp,
+        ),
+    ) {
+        Text(
+            node.stringProp("label"),
+            // The node's accessible name, stated where material3's clickable
+            // merges it; see contentSemantics.
+            modifier = s.contentSemantics(node.stringProp("label")),
+            fontSize = if ((s?.fontSize ?: 0f) > 0f) s!!.fontSize.sp else 17.sp,
+            fontWeight = if ((s?.fontWeight ?: 0) > 0) FontWeight(s!!.fontWeight) else null,
+        )
+    }
+}
+
+/**
+ * The Button that also carries core.OnLongPress.
+ *
+ * material3's Button is `Surface(onClick = ...)` underneath, and the piece it
+ * does not expose is exactly the one needed here — Surface's clickable
+ * overload takes onClick alone. So this rebuilds the same two layers with
+ * combinedClickable in between: Surface for the container (shape, color,
+ * content color, ripple) and a padded Box for the label.
+ *
+ * combinedClickable also registers the click *and* long-click accessibility
+ * actions, so the gesture is reachable from TalkBack rather than by touch
+ * only — the same property gestureModifier relies on for non-control nodes.
+ *
+ * Disabled behaves as it does on the material3 path: the colors are left
+ * alone (the Go theme owns the palette, and comps.Button spends
+ * Surface/TextSecondary on its own disabled look) and only the interaction is
+ * dropped, which also drops the ripple and the accessibility actions.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val s = node.style
+    val onClick = node.stringProp("onClick")
+    val onLongPress = node.stringProp("onLongPress")
+
+    Surface(
+        modifier = buttonBox(s, extra).combinedClickable(
+            enabled = !node.isDisabled(),
+            onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
+            onLongClick = { runtime.click(onLongPress) },
+        ),
+        shape = grMobShape(s, defaultRadius = 8f) ?: RoundedCornerShape(8.dp),
+        color = s?.background ?: MaterialTheme.colorScheme.primary,
+        // OnGoColor on a Go Background, as on the material3 path above.
+        contentColor = s?.textColor
+            ?: s?.background?.let { OnGoColor }
+            ?: MaterialTheme.colorScheme.onPrimary,
+        // The same border the material3 path takes, through Surface's own slot
+        // — this branch rebuilds that button by hand, so every style field it
+        // honors has to be honored here too or an outlined button would lose
+        // its rule the moment it grew an OnLongPress.
+        border = borderStroke(s),
+    ) {
+        Box(
+            // The same content padding the material3 path passes as
+            // contentPadding, including its defaults, so the two buttons are
+            // the same size for the same style.
+            modifier = Modifier.padding(
+                start = (s?.padding?.left ?: 16).dp, top = (s?.padding?.top ?: 10).dp,
+                end = (s?.padding?.right ?: 16).dp, bottom = (s?.padding?.bottom ?: 10).dp,
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                node.stringProp("label"),
+                // The node's accessible name, stated where the clickable
+                // merges it; see contentSemantics.
+                modifier = s.contentSemantics(node.stringProp("label")),
+                fontSize = if ((s?.fontSize ?: 0f) > 0f) s!!.fontSize.sp else 17.sp,
+                fontWeight = if ((s?.fontWeight ?: 0) > 0) FontWeight(s!!.fontWeight) else null,
+            )
+        }
+    }
+}
+
+/**
+ * core.BorderWidth/BorderColor as a material3 border slot, or null for "no
+ * border" — which is what the slot's own default means, so an unstyled button
+ * is untouched.
+ *
+ * The guard is boxModifier's, restated rather than shared because the value is
+ * a different type: `borderWidth > 0f && borderColor != null`. Both halves are
+ * required on every target — a width with no color and a color with no width
+ * each draw nothing on all four — so a Button must not be the one place where
+ * half a border is enough.
+ */
+private fun borderStroke(s: GrMobStyle?): BorderStroke? {
+    if (s == null) return null
+    val color = s.borderColor ?: return null
+    if (s.borderWidth <= 0f) return null
+    return BorderStroke(s.borderWidth.dp, color)
+}
+
+/**
+ * Margin + explicit dimensions only — for components that draw their own box.
+ *
+ * internal rather than private to this file because GrMobMapView.kt needs the
+ * same answer: an osmdroid MapView draws its own surface exactly as a Material
+ * Checkbox does, so it wants the margin and the size and none of the fill. A
+ * second copy there would be the thing this function exists to avoid.
+ */
+/**
+ * marginAndSize for the two Button paths: the same box, without the
+ * accessibility statement, which those paths make on their content instead
+ * (GrMobStyle.contentSemantics explains the caption it left in the reading).
+ * Hidden is kept: clearAndSetSemantics on the box is still the right way to
+ * drop the whole control from the tree.
+ */
+internal fun buttonBox(s: GrMobStyle?, extra: Modifier): Modifier = marginAndSize(
+    s?.copy(
+        accessibilityLabel = "", accessibilityHint = "", accessibilitySelected = "",
+        accessibilityCurrent = "",
+        accessibilityValue = GrMobStyle.ValueRange(null, null, null, ""),
+    ),
+    extra,
+)
+
+internal fun marginAndSize(s: GrMobStyle?, extra: Modifier): Modifier {
+    if (s == null) return extra
+    // Reuse boxModifier's ordering by building a margin/size-only style.
+    val trimmed = s.copy(
+        background = null, borderColor = null, borderWidth = 0f,
+        borderRadius = 0f, corners = null, shadow = 0f,
+        padding = GrMobStyle.Edges(0, 0, 0, 0),
+    )
+    return trimmed.boxModifier(extra)
+}
+
+/**
+ * A core.Select: the chosen option's label in the style's own box, with the
+ * list hung off it as a dropdown.
+ *
+ * # Why a Box and a DropdownMenu rather than ExposedDropdownMenuBox
+ *
+ * Material's exposed dropdown is built on an OutlinedTextField, which draws a
+ * frame, a container colour and a trailing icon of its own that no Go style
+ * can remove. That would make the picker the one control in the vocabulary
+ * whose edge came from the platform here and from the theme everywhere else —
+ * exactly the divergence htmlout's borderResetTypes was extended to prevent,
+ * since the <select> row in that set rests on this arm drawing nothing but
+ * what the style asks for.
+ *
+ * So the box is boxModifier's, like every other node's, and the menu supplies
+ * only the behavior.
+ *
+ * # The open state is local, and is the only state this renderer owns
+ *
+ * Whether the list is showing is not something Go knows or should: there is no
+ * prop for it, no patch describes it, and a menu that closed on every
+ * unrelated re-render would be unusable. The *selection* stays controlled, as
+ * every other input's value is — the label shown is whichever option matches
+ * Go's value, and a tap goes up as the option's value, never its index.
+ *
+ * An unmatched value falls back to showing the raw string rather than an empty
+ * box, which is the same degradation the web target makes and the honest one
+ * for a state the app has put the widget in.
+ */
+@Composable
+private fun GrMobSelect(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val s = animatedStyle(node.style)
+    val cb = node.stringProp("onChange")
+    val value = node.stringProp("value")
+    val options = node.props["options"] as? List<Map<String, Any?>> ?: emptyList()
+    val chosen = options.firstOrNull { it["value"] as? String == value }
+    var open by remember { mutableStateOf(false) }
+    val enabled = !node.isDisabled()
+
+    Box(modifier = s.boxModifier(extra).clickable(enabled = enabled) { open = true }) {
+        Text(text = chosen?.get("label") as? String ?: value, style = textStyle(s))
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            // Material's dropdown has no Section construct, so a run of
+            // options sharing a core.SelectOption.Group is announced by a
+            // heading item written ahead of it — an item with no onClick,
+            // which is what makes it a label rather than a choice.
+            //
+            // The split into runs is grMobMenuSections in GrMobSelectMenu.kt,
+            // which imports nothing and states the rule once for this
+            // renderer; core.SelectMenuSections is the authority it follows.
+            grMobMenuSections(options).forEach { section ->
+                if (section.heading.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(section.heading, style = MaterialTheme.typography.labelSmall)
+                        },
+                        onClick = {},
+                        enabled = false,
+                    )
+                }
+                section.items.forEach { item ->
+                    DropdownMenuItem(
+                        text = { Text(item.label) },
+                        onClick = {
+                            open = false
+                            // The choice goes up as the option's *value*:
+                            // core.Select registers a func(string), so this is
+                            // the text channel. The index is the one identity
+                            // that changes when the list is reordered, and a
+                            // label is written to be read.
+                            if (cb.isNotEmpty()) runtime.textChanged(cb, item.value)
+                        },
+                        // A disabled option is still drawn and still announced
+                        // — that is what disabling one buys over leaving it
+                        // out — and this is what stops the tap. See
+                        // core.SelectOption.Disabled.
+                        enabled = !item.isDisabled,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val cb = node.stringProp("onToggle")
+    Checkbox(
+        checked = node.boolProp("checked"),
+        onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
+        modifier = marginAndSize(node.style, extra),
+        enabled = !node.isDisabled(),
+        // The theme's accent on the checked box (core.AccentColor). The
+        // unchecked outline keeps Material's colour, the scheme's.
+        colors = node.style?.accentColor
+            // The tick on it is OnGoColor rather than the scheme's onPrimary,
+            // which is meant for the scheme's own primary (GrMobSurface.kt).
+            ?.let { CheckboxDefaults.colors(checkedColor = it, checkmarkColor = OnGoColor) }
+            ?: CheckboxDefaults.colors(),
+    )
+}
+
+/**
+ * A core.Switch: Material 3's Switch, the instant-effect sibling of the
+ * Checkbox above. Same wire shape as one — the state arrives as `checked` and
+ * the change goes up through the bool channel — because it is the same bool;
+ * see core.Switch for why the two are separate node types and why the prop
+ * keeps the DOM's spelling rather than Go's `on`.
+ *
+ * Material draws the two differently on purpose and the platform guidance is
+ * the same as this framework's: a checkbox collects a value something else
+ * will act on, a switch acts on the tap. Nothing here has to arrange for that
+ * distinction — instantiating the other control is the whole of it.
+ *
+ * Its own colours come from the Material theme rather than from the Go style,
+ * exactly as the Checkbox's do: marginAndSize spends only the margin and the
+ * size, which is what keeps a control that a platform draws from being half
+ * drawn by a palette. The one exception is the accent (core.AccentColor,
+ * the theme's Primary by default), which goes into Material's own checked
+ * slots: the on track and its border. The thumb and the whole off state stay
+ * Material's. Without it the on track was Material's baseline purple in an
+ * app whose theme said blue.
+ */
+@Composable
+private fun GrMobSwitch(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val cb = node.stringProp("onToggle")
+    Switch(
+        checked = node.boolProp("checked"),
+        onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
+        modifier = marginAndSize(node.style, extra),
+        enabled = !node.isDisabled(),
+        colors = node.style?.accentColor
+            // The thumb on that track is OnGoColor, as the Checkbox's tick is.
+            ?.let {
+                SwitchDefaults.colors(
+                    checkedTrackColor = it,
+                    checkedBorderColor = it,
+                    checkedThumbColor = OnGoColor,
+                )
+            }
+            ?: SwitchDefaults.colors(),
+    )
+}
+
+/**
+ * A core.Slider: Material 3's Slider over Go's [min, max]. Controlled with
+ * the same compromise the text fields make — Go's value is shown except
+ * while the thumb is being dragged, when the finger's value is, so a status
+ * tick arriving mid-drag (a seek bar fed by the audio player) cannot snap
+ * the thumb back. onChange goes up on every move; onChangeEnd once, on
+ * release, with the final value (core.OnSliderChangeEnd). Both are text
+ * callbacks carrying the number; Go parses Kotlin's Float.toString.
+ *
+ * Compose's `steps` is the number of *intermediate* notches, so a step of
+ * 0.25 over 0..1 is 3 notches — hence the -1. A step wider than the range
+ * clamps to 0, which is continuous, the same as no step.
+ */
+@Composable
+private fun GrMobSlider(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val min = node.doubleProp("min").toFloat()
+    val rawMax = node.doubleProp("max").toFloat()
+    val max = if (rawMax > min) rawMax else min + 1f
+    val step = node.doubleProp("step").toFloat()
+    val upstream = node.doubleProp("value").toFloat().coerceIn(min, max)
+    val onChange = node.stringProp("onChange")
+    val onChangeEnd = node.stringProp("onChangeEnd")
+
+    var dragging by remember { mutableStateOf(false) }
+    var local by remember { mutableFloatStateOf(upstream) }
+    val shown = if (dragging) local else upstream
+
+    Slider(
+        value = shown,
+        onValueChange = {
+            dragging = true
+            local = it
+            if (onChange.isNotEmpty()) runtime.textChanged(onChange, it.toString())
+        },
+        onValueChangeFinished = {
+            dragging = false
+            if (onChangeEnd.isNotEmpty()) runtime.textChanged(onChangeEnd, local.toString())
+        },
+        valueRange = min..max,
+        steps = if (step > 0f) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,
+        modifier = marginAndSize(node.style, extra),
+        enabled = !node.isDisabled(),
+        // The theme's accent (core.AccentColor) on the thumb and the filled
+        // track, and the same colour faded for the unfilled track. Material's
+        // own unfilled track is a pale tone of its baseline purple, which
+        // beside a blue fill read as a second, unrelated colour.
+        colors = node.style?.accentColor
+            ?.let {
+                SliderDefaults.colors(
+                    thumbColor = it,
+                    activeTrackColor = it,
+                    inactiveTrackColor = it.copy(alpha = 0.24f),
+                )
+            }
+            ?: SliderDefaults.colors(),
+    )
+}
+
+/**
+ * The controlled-input compromise: Go owns the value, but the IME needs its
+ * keystrokes echoed instantly, and the Go round trip is asynchronous. So the
+ * field is locally-owned *while focused* (every edit is sent upstream but
+ * late echoes never snap the cursor back), and Go-owned when not focused
+ * (an async upstream change — validation rewrites, state restores — lands
+ * the moment the user isn't mid-typing).
+ *
+ * The one upstream change that must land mid-focus is a deliberate rewrite —
+ * Go clearing the draft after a submit, a validator normalizing the text.
+ * Echoes and rewrites are told apart by bookkeeping, not heuristics: every
+ * edit goes to Go with a sequence number and the rewrite epoch this field
+ * has adopted, and Go stamps the field with the last edit it applied and its
+ * own rewrite count. A higher epoch is a rewrite and wins even while
+ * focused; anything else is an echo. Moving the cursor then is correct: the
+ * text under it was replaced. See TextEditLedger (GrMobTextEdits.kt) for the
+ * rule and core/text_edit.go for the protocol.
+ *
+ * It used to be a queue of sent values, with any upstream value not in the
+ * queue read as a rewrite. That lost keystrokes typed faster than the round
+ * trip: the rewrite arrived after later keystrokes had been sent on the old
+ * text, and Go applied those as if they were new (",gamma," into a TagInput
+ * committed "mma" on the emulator). The epoch lets Go drop them, and the
+ * ledger replays them onto the rewrite.
+ *
+ * # Why a TextFieldState, and not a value and onValueChange
+ *
+ * The ledger fixed what Go did with keystrokes. It could not fix the ones
+ * that never reached it: with the value-and-callback BasicTextField, a key or
+ * two typed just after a rewrite landed never came out of onValueChange at
+ * all. The emulator showed it with `adb shell input text` into lesson 5.8, and
+ * with every IME disabled:
+ *
+ *   burst "alpha,beta,gamma,delta,"   Compose 1.6.8   bea   gmma  dlta
+ *                                     Compose 1.7.6   bta   amma  dlta
+ *
+ * That field keeps the text twice, once in the caller's state and once in the
+ * editing buffer the key handler and the IME write into, and it reconciles
+ * the two when the caller passes a new value. A rewrite is exactly such a
+ * value, and a keystroke that lands between the rewrite and that
+ * reconciliation is applied to a buffer the reconciliation then replaces.
+ *
+ * A TextFieldState is the one buffer. The key handler, the IME and a
+ * rewrite all edit it, in the order they happen, so nothing is overwritten.
+ * The costs, both small: user edits are read by observing the state rather
+ * than from a callback (see the snapshotFlow below, and LastText for how a
+ * rewrite is kept from being read back as typing), and the upstream handling
+ * runs in an effect, because a state is edited from outside composition.
+ */
+@Composable
+private fun GrMobTextField(
+    node: GrMobNode,
+    extra: Modifier,
+    password: Boolean = false,
+    numeric: Boolean = false,
+    multiline: Boolean = false,
+) {
+    val runtime = LocalGrMobRuntime.current
+    val s = node.style
+    val upstream = node.stringProp("value")
+    val onChange = node.stringProp("onChange")
+    val onSubmit = node.stringProp("onSubmit")
+    // The keyboard's action key, decided in Go from core.UseFocusOrder: "next"
+    // on every field of a declared order but the last. Go also wired the
+    // onSubmit above to advance the focus, so this prop only has to choose the
+    // label — the action itself is an ordinary submit dispatch.
+    val imeAction = node.stringProp("imeAction")
+    val onFocus = node.stringProp("onFocus")
+    val onBlur = node.stringProp("onBlur")
+    // The imperative half: core.Focus / core.DismissKeyboard reach the screen
+    // as these two props. See the LaunchedEffect below and core/focus.go.
+    val focusEpoch = node.intProp("focusEpoch")
+    val focusAction = node.stringProp("focusAction")
+
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val interactions = remember { MutableInteractionSource() }
+    val focused by interactions.collectIsFocusedAsState()
+    // The field's one buffer; see "Why a TextFieldState".
+    val field = remember { TextFieldState(upstream) }
+    // The text this field last sent, or last had written into it for Go. The
+    // observer below reads every change to the buffer and sends the ones that
+    // differ from it, which are the user's.
+    val last = remember { LastText(upstream) }
+    // Go's edit stamps: the last edit it applied and its rewrite count. Both are
+    // 0 on a field no edit has reached. See core/text_edit.go.
+    val editSeq = node.intProp("editSeq")
+    val editEpoch = node.intProp("editEpoch")
+    // Whether Go stamped this field at all; see TextEditLedger.
+    val stamped = node.props.containsKey("editEpoch")
+    val ledger = remember { TextEditLedger(upstream, editEpoch) }
+    // Every edit leaves by this one path, so the ledger records exactly what
+    // Go was sent and under which epoch.
+    val send = { next: String ->
+        last.text = next
+        if (onChange.isNotEmpty()) {
+            ledger.sent(runtime.textEdited(onChange, next, ledger.epoch), next)
+        }
+    }
+    // Writes Go's text into a blurred field's buffer, where the caret has no
+    // user to follow. `last` is set first, so the observer reads the change as
+    // Go's and does not send it back. A focused field's rewrite keeps its caret
+    // instead; see the effect below.
+    val adopt = { next: String ->
+        last.text = next
+        if (field.text.toString() != next) field.setTextAndPlaceCursorAtEnd(next)
+    }
+
+    // The user's edits. snapshotFlow emits the buffer's text after each change
+    // is applied, conflating any that land between two frames, which is all Go
+    // needs: every value it is sent is a whole text, and the ledger reads
+    // whichever of them Go acknowledges.
+    //
+    // The send is read through rememberUpdatedState because the effect outlives
+    // the composition that started it, and the callback ID it sends under can
+    // change between passes (IDs are positional; see callbackRegistry).
+    val currentSend by rememberUpdatedState(send)
+    LaunchedEffect(field) {
+        snapshotFlow { field.text.toString() }.collect { now ->
+            if (now != last.text) currentSend(now)
+        }
+    }
+
+    // The three together, because each can change alone: an echo moves only
+    // the ack, and Go refusing an edit moves the ack and the epoch and leaves
+    // the value where it was.
+    //
+    // In an effect rather than in the composition body, where this used to
+    // run: it writes the buffer, and a TextFieldState is edited from outside
+    // composition. Keyed on the stamps and on focus, which are the two things
+    // it answers to. The effect reads the buffer when it runs, so typing that
+    // landed after this composition is in `local` and is replayed with the
+    // rest.
+    val seen = Triple(upstream, editSeq, editEpoch)
+    val lastSeen = remember { LastSeen(seen) }
+    LaunchedEffect(seen, focused) {
+        val fresh = seen != lastSeen.value
+        lastSeen.value = seen
+        if (!focused) {
+            // Go-owned while blurred; anything in flight died with the focus
+            // session.
+            ledger.reset(upstream, editEpoch)
+            adopt(upstream)
+            return@LaunchedEffect
+        }
+        if (!fresh) return@LaunchedEffect
+        ledger.upstream(upstream, editSeq, editEpoch, field.text.toString(), stamped)?.let { next ->
+            // The caret is carried across the change from the field's text to
+            // the new one ([carryCaret]), so it stays with the text it was
+            // after. That is what makes a transform typeable mid-text: an
+            // uppercasing onChange rewrites every keystroke, and a caret sent
+            // to the end each time would put the second letter typed in the
+            // middle at the end. A rewrite that shortens the text (a committed
+            // tag) brings it to the end, where the replayed typing is.
+            //
+            // It used to keep its raw offset, clamped, which is the same
+            // answer for both of those and the wrong one when Go inserts
+            // before the caret: a mask's "(" arrived and the caret stayed at
+            // 1, in front of the digit just typed (comps.MaskedInput).
+            last.text = next
+            val keep = field.selection
+            val was = field.text.toString()
+            field.edit {
+                replace(0, length, next)
+                selection = TextRange(carryCaret(was, next, keep.start), carryCaret(was, next, keep.end))
+            }
+            // Typing Go has not seen yet, replayed onto its rewrite.
+            if (next != upstream) send(next)
+        }
+    }
+
+    // The focus edges, dispatched to Go on the void channel like onSubmit.
+    //
+    // In a LaunchedEffect rather than inline in the composition body: sending
+    // an event to Go wakes a render pass, and a composable's body may run any
+    // number of times for one logical change (recomposition, and Compose is
+    // free to re-run it speculatively). The effect keys on `focused`, so it
+    // runs once per actual transition.
+    //
+    // seenFocus is what keeps mount quiet. collectIsFocusedAsState starts at
+    // false, so the effect's first run is an unfocused field that never had
+    // focus to lose; without the flag every text field on screen would fire
+    // onBlur the moment it appeared. SwiftUI's onChange(of:) skips the initial
+    // value for us and needs no equivalent — see the iOS renderer.
+    var seenFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (focused) {
+            seenFocus = true
+            if (onFocus.isNotEmpty()) runtime.click(onFocus)
+        } else if (seenFocus) {
+            seenFocus = false
+            if (onBlur.isNotEmpty()) runtime.click(onBlur)
+        }
+    }
+
+    // Go's focus *commands*, the other direction from the edges above.
+    //
+    // Keyed on the epoch alone, never on the action: the action is what to
+    // do, the epoch is when. Two identical prop maps produce no patch and so
+    // no recomposition, which is exactly why Go bumps a counter rather than
+    // setting a flag — a second core.Focus on the already-focused field has
+    // to re-fire, and only a changed key can express that.
+    //
+    // Epoch 0 means no command has ever been issued (Go stamps nothing at
+    // all), so the effect's mandatory first run does nothing on a screen that
+    // never touches focus.
+    //
+    // Unlike the edge effect above this deliberately has NO mount guard. A
+    // field that mounts while it is already the target takes focus, which is
+    // what makes "push a screen and put the cursor in its search box" work:
+    // the command is issued in the handler that navigates, and the field it
+    // names does not exist until the pass after. The cost is that returning
+    // to a screen re-applies the last command that named its field; issue a
+    // core.DismissKeyboard if that is not wanted.
+    //
+    // "blur" is guarded on this field actually holding focus so that one
+    // dismiss does not have every field on screen calling clearFocus(). Only
+    // the target acts on "focus"; every other field is told "" and does
+    // nothing, because requesting focus over there already takes it from
+    // here — having both sides act would make the outcome depend on the
+    // order Compose happens to run two effects in.
+    LaunchedEffect(focusEpoch) {
+        if (focusEpoch == 0) return@LaunchedEffect
+        when (focusAction) {
+            // requestFocus throws if the requester is not attached to a
+            // placed node yet. A LaunchedEffect already runs after
+            // composition, which covers the ordinary case; the catch covers
+            // the field being composed but not yet placed (inside a lazy
+            // list that has not laid out the row), where the honest outcome
+            // is "the command missed" rather than a crashed screen.
+            "focus" -> runCatching { focusRequester.requestFocus() }
+            "blur" -> if (focused) focusManager.clearFocus()
+        }
+    }
+
+    val rows = node.intProp("rows")
+    // Appended after the box modifier, so the requester sits on the innermost
+    // element — the field itself — rather than on the padding around it.
+    var modifier = s.boxModifier(extra).focusRequester(focusRequester)
+    if (multiline && rows > 0) {
+        // Approximate a rows-based min height from the line height.
+        val line = if (s != null && s.fontSize > 0f) s.fontSize * 1.4f else 24f
+        modifier = modifier.heightIn(min = (line * rows).dp)
+    }
+
+    val keyboard = KeyboardOptions(
+        // core.Keyboard asks a text field for a keyboard by name; a password
+        // field keeps the password type (its masking is the field's), except
+        // for digits, where NumberPassword is Android's digits-and-masked pad:
+        // a device PIN. NumericInput is the node type that picks its own.
+        keyboardType = when {
+            numeric -> KeyboardType.Number
+            password -> if (node.stringProp("keyboard") == "digits") KeyboardType.NumberPassword
+                else KeyboardType.Password
+            else -> when (node.stringProp("keyboard")) {
+                "digits" -> KeyboardType.Number
+                "decimal" -> KeyboardType.Decimal
+                "phone" -> KeyboardType.Phone
+                "email" -> KeyboardType.Email
+                "url" -> KeyboardType.Uri
+                else -> KeyboardType.Text
+            }
+        },
+        // A submit-carrying field advertises Done so the IME's action key
+        // reads as "act on this", mirroring the iOS submitLabel; a field
+        // with somewhere to go advertises Next instead, so the key reads
+        // "move on" and the platform draws the arrow users expect.
+        //
+        // Next is tested first because it is the more specific claim: Go
+        // only stamps it on a field whose onSubmit it wired itself, so the
+        // two can never disagree about what the key does.
+        imeAction = when {
+            imeAction == "next" -> ImeAction.Next
+            onSubmit.isNotEmpty() -> ImeAction.Done
+            else -> ImeAction.Default
+        },
+    )
+    // The IME action dispatches onSubmit as a plain void event — the same
+    // channel as a Button tap. One handler serves Done and Next: the field
+    // advertised one of them, and Go has already decided which handler the
+    // ID points at.
+    //
+    // performDefaultAction is deliberately never called. For Next it would be
+    // a focus move through Compose's own focus graph, which is derived from
+    // layout and knows nothing about the order the Go code declared; for Done
+    // it would hide the keyboard, which the old KeyboardActions handlers did
+    // not do either.
+    //
+    // A multiline field gets no handler: its return key inserts a newline,
+    // which is the right call. A TextArea in a focus order simply does not
+    // advance.
+    val action = if (multiline) null else KeyboardActionHandler {
+        if (onSubmit.isNotEmpty()) runtime.click(onSubmit)
+    }
+    val decorator = TextFieldDecorator { inner ->
+        Box {
+            if (field.text.isEmpty()) {
+                // One line for a single-line field, cut with an ellipsis, as a
+                // SwiftUI TextField's prompt is and a web <input>'s placeholder
+                // never wraps. A wrapping prompt made the field as tall as its
+                // words in a narrow box (gonotes_mobile's search field in a
+                // two-pane list pane stood the height of the pane, one word
+                // per line). A TextArea's prompt still wraps, as it does in a
+                // <textarea>.
+                Text(
+                    node.stringProp("placeholder"),
+                    style = textStyle(s).copy(color = Color(0x993C3C43)),
+                    maxLines = if (multiline) Int.MAX_VALUE else 1,
+                    overflow = if (multiline) TextOverflow.Clip else TextOverflow.Ellipsis,
+                )
+            }
+            inner()
+        }
+    }
+
+    // A disabled field refuses focus outright, so the IME never opens and the
+    // focused/blurred bookkeeping above simply stays in its blurred branch —
+    // Go-owned, which is the correct reading of an inert field.
+    if (password) {
+        // The secure field is the password variant of the same state-based
+        // field: single-line by construction, and it refuses cut and copy.
+        // Hidden obfuscation rather than the platform's reveal-the-last-key,
+        // which is what PasswordVisualTransformation drew before it.
+        //
+        // Foundation 1.7.x composes BasicSecureTextField inside a Box of its
+        // own (DisableCutCopy, which hangs the cut/copy key filter on it), so
+        // the field is NOT the parent's direct child:
+        //
+        //   Row ─ Box(onPreviewKeyEvent)   ← what the Row measures
+        //          └ BasicTextField(modifier = ours)
+        //
+        // Parent data on our modifier — a Row's weight, a FlowRow's align —
+        // lands one layout too deep and is ignored, and that Box hands its
+        // child a zero minimum. comps.PasswordField's FlexGrow(1) input hugged
+        // its content beside "Show" (378px of a 1423px slot on a Fold6,
+        // lesson 4.27) while the revealed core.Input filled it.
+        //
+        // So the parent's modifiers go on this wrapper, which IS the direct
+        // child, and a width the wrapper is given tight — a weight's share,
+        // or a stretch's fill — is passed on by filling it. Anything looser
+        // leaves the field at its own size, as before. The fill is appended
+        // after the box modifier so a declared Width still wins. Foundation
+        // 1.10 moved the filter into the modifier chain; with a BOM past it
+        // this wrapper can go.
+        BoxWithConstraints(extra, propagateMinConstraints = true) {
+            val fill = if (constraints.hasFixedWidth) Modifier.fillMaxWidth() else Modifier
+            BasicSecureTextField(
+                state = field,
+                modifier = s.boxModifier().focusRequester(focusRequester).then(fill),
+                enabled = !node.isDisabled(),
+                textStyle = textStyle(s),
+                keyboardOptions = keyboard,
+                onKeyboardAction = action,
+                interactionSource = interactions,
+                decorator = decorator,
+                textObfuscationMode = TextObfuscationMode.Hidden,
+            )
+        }
+    } else {
+        BasicTextField(
+            state = field,
+            modifier = modifier,
+            enabled = !node.isDisabled(),
+            textStyle = textStyle(s),
+            keyboardOptions = keyboard,
+            onKeyboardAction = action,
+            lineLimits = if (multiline) TextFieldLineLimits.MultiLine() else TextFieldLineLimits.SingleLine,
+            interactionSource = interactions,
+            decorator = decorator,
+        )
+    }
+}
+
+/**
+ * The text a GrMobTextField last sent or was given by Go: a plain holder, not
+ * snapshot state, because it is bookkeeping read by the edit observer and
+ * nothing is drawn from it. See GrMobTextField's `last`.
+ */
+private class LastText(var text: String)
+
+/** The stamps a GrMobTextField last read, held the same way as [LastText]. */
+private class LastSeen(var value: Triple<String, Int, Int>)
+
+// ---------------------------------------------------------------------------
+// Flex containers
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GrMobRow(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    // core.FlexWrap(true) asks for CSS flex-wrap behavior: children that do
+    // not fit the width continue on the next line instead of being squeezed.
+    // A plain Row cannot do that — it measures each child against whatever
+    // width is left, so the first chip that no longer fits has its label
+    // broken mid-word and everything after it gets zero width. FlowRow is
+    // Compose's wrapping row. Its scope extends RowScope, so RowChildren and
+    // the weight modifier it applies work unchanged; the gap spaces both
+    // axes — items along the line (via horizontalArrangement, so
+    // ColumnGap-then-Gap) and the wrapped lines apart (verticalArrangement,
+    // so RowGap-then-Gap), which is what CSS gap does on a wrapping flex
+    // container.
+    //
+    // Cross-axis alignment within a line goes on each child instead of on the
+    // container: FlowRow at this foundation version has no verticalAlignment
+    // slot, but its scope is a RowScope, so Modifier.align places a child
+    // within its own line, as CSS align-items does on a wrapping flex
+    // container. It used to be skipped on the grounds that wrapped chip rows
+    // are single-height. comps.Breadcrumb is not: its ancestors are ghost
+    // Buttons at the 48dp touch minimum and its current page is a bare Text,
+    // so under the old Top placement "#40121" and the chevrons sat 14dp
+    // above "Orders" and "March" (seen on the emulator, lesson 4.27).
+    // flex-start and stretch keep FlowRow's own Top: a stretched child is not
+    // given the line's height here, which is an older gap and a different one.
+    if (s?.flexWrap == "wrap") {
+        val lineAlign = when (s.alignItems) {
+            "center" -> Alignment.CenterVertically
+            "flex-end" -> Alignment.Bottom
+            else -> null
+        }
+        FlowRow(
+            modifier = s.boxModifier(extra, gestureModifier(node)),
+            horizontalArrangement = horizontalArrangement(s),
+            verticalArrangement = packedVertically(s),
+        ) { RowChildren(node, lineAlign = lineAlign, wrapping = true) }
+        return
+    }
+    Row(
+        modifier = s.boxModifier(extra.then(stretchRowHeight(s, node)), gestureModifier(node)),
+        horizontalArrangement = horizontalArrangement(s),
+        // Held to core.AlignItemsValues() by
+        // TestKotlinRowAlignmentCoversEveryAlignItems in mobile/verify: one arm
+        // per line, string literals first, `else ->` last, and the two arms
+        // duplicating `else`'s body stay spelled out.
+        //
+        // No `align` fallback here, unlike the Column below. Style.Align is a
+        // text-alignment concept and has never been read for a Row's vertical
+        // axis; Renderer.swift draws the same line (GrMobFlexStack consults it
+        // only when the axis is vertical), so the two natives agree.
+        verticalAlignment = when (s?.alignItems) {
+            "flex-start" -> Alignment.Top
+            "center" -> Alignment.CenterVertically
+            "flex-end" -> Alignment.Bottom
+            // Not placement. A stretched child is given the full height by
+            // RowChildren's fillMaxHeight, so nothing is left for the row's own
+            // alignment to place. Listed so "handled elsewhere" is
+            // distinguishable from "not handled".
+            "stretch" -> Alignment.Top
+            else -> Alignment.Top
+        },
+    ) { RowChildren(node, intrinsicHeight = rowPinsHeight(s, node)) }
+}
+
+/**
+ * core.ZStack: every child drawn in the same box, in tree order, so the last
+ * one written is on top.
+ *
+ * `Alignment.Center` is stated rather than left to the default, and here it
+ * has to be: a Compose Box defaults to TopStart, while a SwiftUI ZStack and a
+ * CSS grid cell both centre. Centre is the arrangement core.ZStack documents
+ * as its contract, so this is the renderer that would have diverged silently.
+ *
+ * Not ColumnChildren: an overlay divides no leftover space along an axis, so
+ * there is no weight to hand a layer and no cross-axis stretch to apply. A
+ * layer that wants the stack's full extent states its own dimensions, which is
+ * what core.ZStack's alignment contract asks of it.
+ *
+ * # The per-layer opt-out
+ *
+ * core.Style.StackAlign lets one layer sit in a corner instead, and Compose is
+ * the target that spells it most directly: `Modifier.align` exists inside
+ * BoxScope for exactly this, it places without resizing, and a placed child
+ * still contributes its size to the Box the way an unplaced one does. That is
+ * why the children are looped over here rather than handed to RenderChildren —
+ * the modifier has to be built per child, in this scope.
+ *
+ * An unplaced layer receives Modifier and falls to `contentAlignment` above,
+ * which is byte for byte what RenderChildren did, so no tree that predates the
+ * property moves.
+ */
+@Composable
+private fun GrMobZStack(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    Box(
+        modifier = s.boxModifier(extra, gestureModifier(node)),
+        contentAlignment = Alignment.Center,
+    ) {
+        node.children.forEachIndexed { i, child ->
+            val placed = grMobStackAlignment(child.style?.stackAlign ?: "")
+            key(child.key.ifEmpty { i }) {
+                RenderNode(child, if (placed == null) Modifier else Modifier.align(placed))
+            }
+        }
+    }
+}
+
+/**
+ * Go's core.StackAlignment as a Compose Alignment, or null for the centre.
+ *
+ * null rather than Alignment.Center is what the caller needs: an unplaced
+ * layer must reach RenderNode with the same Modifier it always did, so that
+ * adding this property moved nothing that already existed.
+ *
+ * The nine values line up one for one with Compose's own 2D Alignment
+ * vocabulary, which is the reason core.StackAlignment is a two-axis type
+ * rather than a second reading of the flexbox AlignSelf. Start/End are the
+ * writing-direction-aware pair, matching Go's spelling and SwiftUI's
+ * leading/trailing.
+ *
+ * Every declared value has an arm, and the default is the centre rather than a
+ * crash: a placement this build does not know is a Go binary newer than this
+ * app, and a layer in the middle is the contract's own default.
+ * mobile/verify's coverage check holds the arms to core.StackAlignments().
+ */
+private fun grMobStackAlignment(align: String): Alignment? = when (align) {
+    "top-start" -> Alignment.TopStart
+    "top" -> Alignment.TopCenter
+    "top-end" -> Alignment.TopEnd
+    "start" -> Alignment.CenterStart
+    "end" -> Alignment.CenterEnd
+    "bottom-start" -> Alignment.BottomStart
+    "bottom" -> Alignment.BottomCenter
+    "bottom-end" -> Alignment.BottomEnd
+    else -> null
+}
+
+/**
+ * `outer` is appended *after* boxModifier rather than folded into `extra`,
+ * and the difference is load-bearing for its one caller. boxModifier puts
+ * `extra` at the head of the chain, ahead of the background, so an inset
+ * passed that way would shrink the box before it is painted; passed here it
+ * insets only the content and the background still reaches the edges. That is
+ * exactly what a SafeArea needs — see the dispatch arm — and nothing else
+ * passes it.
+ */
+@Composable
+private fun GrMobColumn(node: GrMobNode, extra: Modifier, outer: Modifier = Modifier) {
+    val s = animatedStyle(node.style)
+    Column(
+        modifier = s.boxModifier(extra, gestureModifier(node)).then(outer),
+        verticalArrangement = verticalArrangement(s),
+        // AlignItems governs cross-axis placement; the DSL's simpler Align
+        // ("start"/"center"/"end") acts as a fallback when AlignItems is unset,
+        // which is why this dispatch answers for two vocabularies at once — the
+        // bare "start"/"end" labels are core.AlignStart and core.AlignEnd, not
+        // AlignItems values. Held to core.AlignItemsValues() by
+        // TestKotlinColumnAlignmentCoversEveryAlignItems in mobile/verify; one
+        // arm per line, string literals first, `else ->` last.
+        horizontalAlignment = when (s?.alignItems?.ifEmpty { s.align }) {
+            "flex-start", "start" -> Alignment.Start
+            "center" -> Alignment.CenterHorizontally
+            "flex-end", "end" -> Alignment.End
+            // Given the full width by ColumnChildren's fillMaxWidth, so there
+            // is nothing left to place. See the Row above.
+            "stretch" -> Alignment.Start
+            else -> Alignment.Start
+        },
+    ) { ColumnChildren(node) }
+}
+
+/**
+ * The children loops live inside RowScope/ColumnScope because FlexGrow maps
+ * onto Modifier.weight, which exists only as a scope extension — the parent
+ * computes it and hands it down as the child's `extra` modifier.
+ *
+ * The other parent-computed piece is `AlignItems: "stretch"`. Compose's
+ * Alignment.Horizontal/Vertical enums have no stretch member — a stretched
+ * item is not *placed* differently, it is *measured* differently — so the
+ * container cannot express it and the children carry a fill modifier
+ * instead. That is the same shape as weight: a cross-axis decision only the
+ * parent knows, applied to the child.
+ *
+ * Weight and fill compose cleanly because they act on different axes: in a
+ * Column, weight distributes height and fillMaxWidth sets width.
+ */
+@Composable
+private fun RowScope.RowChildren(
+    node: GrMobNode,
+    intrinsicHeight: Boolean = false,
+    // Where each child sits on the cross axis of its line, when the
+    // container cannot say so itself: a FlowRow's alignItems. Null leaves
+    // the placement to the container (a Row's verticalAlignment).
+    lineAlign: Alignment.Vertical? = null,
+    // A FlowRow's children. A child's own AlignSelf(stretch) is not given
+    // the line's height there, for the reason a stretched FlowRow's children
+    // are placed at the top (see GrMobRow): it sits at the top instead.
+    wrapping: Boolean = false,
+) {
+    val stretch = isStretch(node.style)
+    // A Row pinned to its tallest child (stretchRowHeight) measures every
+    // child at that one height, so a Column inside it has a definite height
+    // even in a scrolled page; see LocalGrMobUnboundedHeight.
+    val rebound = intrinsicHeight && LocalGrMobUnboundedHeight.current
+    // No width to divide: a grow child keeps its content width, as a flex
+    // item with no free space does. See LocalGrMobUnboundedWidth.
+    val unboundedWidth = LocalGrMobUnboundedWidth.current
+    node.children.forEachIndexed { i, child ->
+        key(child.key.ifEmpty { i }) {
+            val grow = child.style?.flexGrow ?: 0f
+            var m: Modifier = if (grow > 0f && !unboundedWidth) Modifier.weight(grow) else Modifier
+            // core.FlexShrink(0) on an unweighted child. A weighted one is not
+            // given the modifier and that is not an omission: Modifier.weight
+            // sets the child's main axis to its share of the remainder as both
+            // a minimum and a maximum, so the two would be contradictory
+            // instructions about one number and weight is the one the author
+            // wrote second. CSS resolves the same pair by never letting them
+            // apply at once — flex-grow divides positive free space and
+            // flex-shrink divides negative — so a Row that is overflowing has
+            // no growth to hand out either way.
+            if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = true)
+            // An unweighted child is measured the way CSS measures a flex
+            // item with flex-basis: auto — never below its min-content width,
+            // and, when it is a container that would otherwise fill, no wider
+            // than its content. See rowChildWidth. A pinned child is already
+            // measured unbounded, and in an unbounded strip there is no offer
+            // either to fill or to floor against.
+            if (grow <= 0f && !unboundedWidth && child.style?.shrinkPinned != true && sizedByRow(child)) {
+                m = m.rowChildWidth(
+                    minWidth = child.style?.minWidth ?: "",
+                    maxWidth = child.style?.maxWidth ?: "",
+                    hug = hugsRowOffer(child),
+                )
+            }
+            // core.Style.AlignSelf overrides the row's verdict for this child
+            // alone (N-100): its own value decides whether it fills the
+            // height and where it sits, and "" defers to the row. A
+            // self-stretched child has a height to fill because the Row
+            // pinned itself to its tallest child (rowPinsHeight).
+            val own = child.style?.alignSelf.orEmpty()
+            // A self-stretched child fills only a definite height: the one
+            // rowPinsHeight measured (intrinsicHeight), or the Row's own
+            // Height. Without either, fillMaxHeight would fill whatever the
+            // PARENT handed down, the whole screen in a bounded column, so the
+            // child keeps its own height instead (rowPinsHeight declines when
+            // a sibling cannot answer an intrinsic query).
+            val selfFills = !wrapping && (intrinsicHeight || !node.style?.height.isNullOrEmpty())
+            val stretches = if (own == "stretch") selfFills else selfStretches(own, stretch)
+            if (stretches) m = m.fillMaxHeight()
+            val placed = rowSelfAlignment(own) ?: lineAlign
+            if (placed != null) m = m.align(placed)
+            if (rebound) {
+                CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
+            } else {
+                RenderNode(child, m)
+            }
+        }
+    }
+}
+
+/**
+ * The node types whose width can reach a Row's offer on their own: the
+ * containers, through ColumnChildren's fillMaxWidth (a stretched Column), a
+ * weighted grandchild, or a percentage Width somewhere inside. Leaves (Text,
+ * Button, the fields) already measure to their content, so they are not asked
+ * for an intrinsic width they would only repeat.
+ *
+ * A horizontal Scroll is left out: a grow strip sizes itself from the viewport
+ * width it captures during measure, and an intrinsic query would run that
+ * capture under an unbounded width. A Modal is composed in a window of its own
+ * and takes no room in the Row.
+ */
+private val RowOfferFillers = setOf("Column", "Card", "Box", "Row", "ZStack", "SafeArea", "Spacer")
+
+/**
+ * Whether an unweighted Row child is measured by [rowChildWidth] at all.
+ *
+ * Skipped for any Width — points are already definite, and a percentage is a
+ * share of the Row somebody asked for — and for a subtree that cannot answer
+ * intrinsics (see [answersIntrinsicWidth]), which keeps Compose's reading.
+ * Everything else is in, leaves included: the min-content floor is a rule
+ * about flex items, and lesson 8.2's "Repair (set B = A)" Button is a leaf.
+ */
+private fun sizedByRow(child: GrMobNode): Boolean {
+    val s = child.style
+    if (s != null && s.width.isNotEmpty()) return false
+    return answersIntrinsicWidth(child)
+}
+
+/**
+ * Whether that measure also CAPS the child at its content width, rather than
+ * only flooring it at min-content.
+ *
+ * The containers are the ones that need it: a Column with no AlignItems
+ * stretches its children and so fills whatever maximum it is handed, where a
+ * Text or a Button already measures to its own content and a cap would only
+ * repeat what it was going to say.
+ *
+ * A horizontal Scroll joins them when it holds no grower. It is left out of
+ * [RowOfferFillers] because a strip WITH a grower renders through
+ * GrMobGrowStrip, whose measure policy reads a viewport width that a layout
+ * modifier records during the same pass — an intrinsic query runs that capture
+ * with an unbounded width, and the strip would size itself to infinity.
+ * Without a grower there is no such policy: the scroll is a plain Row under
+ * horizontalScrollWhenBounded, which forwards intrinsics to its own content,
+ * so the question is safe and the answer is the strip's natural width.
+ */
+private fun hugsRowOffer(child: GrMobNode): Boolean =
+    child.type in RowOfferFillers || isPlainStrip(child)
+
+/** A horizontal Scroll with no FlexGrow child; see [hugsRowOffer]. */
+private fun isPlainStrip(child: GrMobNode): Boolean =
+    child.type == "Scroll" && child.style?.flexDirection == "row" &&
+        child.children.none { (it.style?.flexGrow ?: 0f) > 0f }
+
+/**
+ * CSS's width for an unweighted flex item in a row.
+ *
+ * ```
+ *   min-width: auto   never below the item's min-content width; the row
+ *                     overflows instead, at the word rather than inside it
+ *   flex-basis: auto  its content width (max-content)...
+ *   shrink to fit     ...shrunk to the space the row has left
+ *   max-width: N%     a share of the ROW, not of the shrunk maximum
+ * ```
+ *
+ * # The defect it exists for
+ *
+ * A Compose Row measures an unweighted child against everything the children
+ * before it left, as a maximum. A child that fills its maximum takes all of it,
+ * and the children after it are measured against nothing. The common filler is
+ * a Column with no AlignItems: it stretches (isColumnStretch), so its Text gets
+ * fillMaxWidth and the Column is as wide as the offer.
+ *
+ * ```
+ *   Row( Column(A), Column(B), Column(C) )     every demoBox in chapter 1
+ *
+ *   Compose, before   [ A ............................................ ]
+ *                     B and C measured against 0: gone
+ *   CSS               [ A ][ B ][ C ]
+ * ```
+ *
+ * Lessons 1.1 (the stats row showed "128" alone), 1.3, 1.4, 4.15 (one star
+ * of five) and 8.2 (counter B gone) all drew this on the emulator. A census of
+ * the other example apps found the same measure doing a second kind of damage
+ * with no siblings involved at all: `examples/chat`'s outgoing bubble is a
+ * lone Column in a `Row(Justify(End))`, and a child as wide as the offer is at
+ * both ends of the row at once, so the packing had nothing left to place.
+ *
+ * # The other direction: the row's maximum is not a minimum
+ *
+ * The same loop hands a child LESS than its content when the earlier children
+ * have taken the room, and Compose treats that as binding. A browser does not:
+ * `min-width: auto` on a flex item floors it at min-content — the width of its
+ * longest unbreakable run — and lets the line overflow. Without the floor
+ * Compose breaks text mid-word, which no browser does:
+ *
+ * ```
+ *   offer 60px, content "Following"
+ *
+ *   Compose, before   Fo | llo | wi | ng      four lines, inside the word
+ *   CSS               Following                one line, overflowing the row
+ * ```
+ *
+ * That was lesson 1.1's third stat and 8.2's "Repair (set B = A)" button.
+ * The floor is min-content, not content: a Text with spaces in it still wraps
+ * at them, so the floor binds only where a browser would overflow too.
+ *
+ * # What it does
+ *
+ * ```
+ *   least   = min-content | MinWidth px | % × offer   the percentage against
+ *                                                      the ROW
+ *   minW    = max(incoming min, least)
+ *   maxW    = offer                     a leaf: it measures its own content
+ *           | min(offer, max-content)   a container that would otherwise fill
+ *           | min(offer, content ÷ N%)  ...and carries a percentage MaxWidth
+ *   measure within minW..maxW; report at the measured width
+ * ```
+ *
+ * The percentage MinWidth floor is resolved here because nothing further in
+ * can resolve it: widthModifier reads a percentage off the maximum it
+ * receives, and after this that maximum is the content width. Folding the
+ * floor into minW gives `max(content, 40% of the Row)`, which is lesson 1.4's
+ * box A; the floor widthModifier then computes, a share of the narrower
+ * maximum, is below minW and moves nothing. A points floor is the same number
+ * either way.
+ *
+ * # `content ÷ N%`, which looks like a trick and is not
+ *
+ * A percentage MaxWidth has the same problem and cannot be solved the same
+ * way, because widthModifier does not merely fail to resolve it — it resolves
+ * it AGAIN, off whatever maximum this layout passes down. Capping here as well
+ * would apply the share twice.
+ *
+ * So the cap is not applied here at all. This picks the maximum that makes
+ * widthModifier's own arithmetic land on CSS's answer, which is
+ * `min(content, N% × offer)`:
+ *
+ * ```
+ *   hand it M           it reports   N% × M
+ *   M = offer           N% × offer                content ≥ N% × offer  ✓
+ *   M = content ÷ N%    N% × content ÷ N% = content   content < N% × offer  ✓
+ *   M = min(the two)    both cases, in one line
+ * ```
+ *
+ * `content` is the intrinsic query's answer, which is the UNCAPPED content
+ * width: an intrinsic measurement arrives at widthModifier with an unbounded
+ * maximum, and a percentage of an unbounded width is `none` there. A zero or
+ * negative percentage is left to widthModifier alone — there is nothing to
+ * divide by, and `0%` collapses the child wherever the maximum comes from.
+ *
+ * A child whose content is wider than the offer is measured at the offer, as
+ * before: that is CSS's shrink to fit, and a long Text inside still wraps.
+ *
+ * # Reporting
+ *
+ * At the measured width, and NOT coerced back into the incoming maximum. That
+ * is pinMainAxis's rule and it is here for pinMainAxis's reason: when the
+ * floor pushes the child past the offer the parent has to learn the child's
+ * real extent, or its running total stays inside a row that is visibly
+ * overflowing and the next sibling is drawn on top of this one. The incoming
+ * MINIMUM is still honoured, which a layout must do.
+ *
+ * # Cost
+ *
+ * One intrinsic query of the child's subtree per measure, two for a container
+ * that is also capped — the same question GrMobGrowStrip and
+ * horizontalScrollWhenBounded already ask. Every unweighted child pays the
+ * first one now, where only containers paid before; a leaf's min-content width
+ * is the cheap half of a measurement Compose is about to do anyway, and the
+ * alternative is a floor that misses every Button in a row.
+ */
+/**
+ * CSS's fit-content width for a Column child placed by its own AlignSelf
+ * (N-100): its max-content width, capped at what the column offers. The
+ * measure rowChildWidth's `hug` takes for a Row child, without the floor
+ * (a column's child is not shrunk along this axis, so there is no
+ * min-content to keep it above) and without the percentage cap arithmetic
+ * (widthModifier's own MaxWidth applies inside it, against the same offer).
+ *
+ * Only asked of the containers and only when the subtree answers
+ * intrinsics (ColumnChildren's guard is rowChildWidth's: hugsRowOffer and
+ * sizedByRow), so a leaf keeps its own measure and a List never sees the
+ * query.
+ */
+private fun Modifier.fitContentWidth(): Modifier = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val content = measurable.maxIntrinsicWidth(constraints.maxHeight)
+    val maxW = minOf(constraints.maxWidth, maxOf(content, constraints.minWidth))
+    val placeable = measurable.measure(constraints.copy(maxWidth = maxW))
+    layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+}
+
+private fun Modifier.rowChildWidth(minWidth: String, maxWidth: String, hug: Boolean): Modifier {
+    val floor = parseWidthCap(minWidth)
+    val cap = parseWidthCap(maxWidth)
+    return layout { measurable, constraints ->
+        if (!constraints.hasBoundedWidth) {
+            val placeable = measurable.measure(constraints)
+            return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
+        val offer = constraints.maxWidth
+        // CSS's automatic minimum size for a flex item. Asked of every child,
+        // capped or not, because it is the floor that stops a word being cut.
+        val minContent = measurable.minIntrinsicWidth(constraints.maxHeight)
+        val declared = floor?.let {
+            if (it.isFraction) (offer * it.amount).roundToInt() else it.amount.dp.roundToPx()
+        } ?: 0
+        val minW = maxOf(constraints.minWidth, declared, minContent)
+        var maxW = offer
+        if (hug) {
+            val content = measurable.maxIntrinsicWidth(constraints.maxHeight)
+            maxW = minOf(offer, content)
+            if (cap != null && cap.isFraction && cap.amount > 0f) {
+                // See "content ÷ N%" above: the maximum handed down is the one
+                // that makes widthModifier's own percentage land on CSS's
+                // answer. ceil so the division cannot shave a pixel off the
+                // content and wrap the last word.
+                maxW = minOf(offer, ceil(content / cap.amount).toInt())
+            }
+        }
+        maxW = maxOf(maxW, minW)
+        val placeable = measurable.measure(constraints.copy(minWidth = minW, maxWidth = maxW))
+        val reported = maxOf(placeable.width, constraints.minWidth)
+        layout(reported, placeable.height) { placeable.placeRelative(0, 0) }
+    }
+}
+
+/**
+ * core.FlexShrink(0), the one shrink declaration a Compose Row or Column can
+ * honour: measure this child against its own content and let the container
+ * overflow, instead of against whatever main-axis space is left.
+ *
+ * # What Compose does without it
+ *
+ * A Row measures its unweighted children in order, each against
+ * `mainAxisMax - fixedSpace` — the space the ones before it did not take
+ * (foundation-layout's RowColumnMeasurePolicy). So a child too big for what is
+ * left is clamped to it: text wraps or ellipsises, a fixed-size box is cut
+ * down. There is no factor anywhere in that arithmetic, which is why a
+ * *fractional* flex-shrink has nothing to map onto here and why this renderer
+ * reads only `shrinkPinned` rather than the whole factor.
+ *
+ * Zero is different, because zero is not a proportion — it is a refusal, and
+ * a refusal is expressible: this measures the child with an unbounded main
+ * axis and reports its full size to the parent, so the child keeps its own
+ * extent and the Row's running total passes the container's own maximum. That
+ * is what the other three targets do with `flex-shrink: 0`.
+ *
+ *      Row(maxWidth = 120)     [ pinned child, 200 wide ][ next child ]
+ *                              └──── reported 200 ────┘  └─ measured
+ *                                                           against 0 ─┘
+ *
+ * # Where it still differs from CSS, and why that is not this function's doing
+ *
+ * The siblings. In CSS the deficit is shared out among the items that *can*
+ * shrink, in proportion to their bases, so a flex line's sizes do not depend on
+ * the order the children are written in; in a Compose Row the child before the
+ * overflow already took what it asked for and the ones after it are offered
+ * what is left, which is nothing. That is the no-proportional-shrink
+ * divergence the census records, and it is a property of the measure policy
+ * rather than of this modifier — the pinned child's own size, which is what
+ * the declaration is about, agrees on all four targets.
+ *
+ * Order does not matter to the pinned child: `remaining` is ignored whether it
+ * is the first child or the last, so a pin is honoured wherever it sits.
+ *
+ * Both of those sentences are now numbers rather than claims.
+ * internal/pinfixture states one overflowing Row with the pin in each of the
+ * three positions and a control with none, transcribes foundation-layout's
+ * zero-weight measure loop over it, and ios/verify/pin.swift solves the same
+ * Row through GrMobFlexSolver — so the agreement about the pinned child and the
+ * disagreement about its siblings are both asserted, on one fixture. What that
+ * arrangement can and cannot say is written down in internal/pinfixture's
+ * header; the short version is that nothing here runs androidx's code, and the
+ * transcription is the one link in the chain no test checks.
+ *
+ * @param horizontal true in a Row (the main axis is the width), false in a
+ * Column. The cross axis is passed through untouched — flex-shrink is a
+ * main-axis property in CSS too, and a child that also wants the cross axis
+ * has fillMaxHeight/fillMaxWidth for it.
+ */
+private fun Modifier.pinMainAxis(horizontal: Boolean): Modifier = layout { measurable, constraints ->
+    val unbounded = if (horizontal) {
+        constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
+    } else {
+        constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
+    }
+    val placeable = measurable.measure(unbounded)
+    // Reported at the measured size, and NOT clamped back to the incoming
+    // constraints on the way out: the whole point is that the parent learns
+    // the child's real extent, so its running total overflows and the overflow
+    // is visible. Compose does not clip a child that reports more than it was
+    // offered, which is what makes this match the DOM's `overflow: visible`
+    // rather than hiding the difference. mobile/verify refuses the clamping
+    // spelling by name, because it compiles and looks like the better-behaved
+    // of the two.
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
+
+/**
+ * @param growMinHeight set by GrMobScroll to its viewport height. Inside a
+ * scroll region the Column measures its children with unbounded height, and
+ * Compose resolves Modifier.weight against an unbounded constraint to zero:
+ * the child, and everything inside it, disappears. A FlexGrow child there
+ * therefore gets a minimum height of the viewport instead of a weight, which
+ * is what the DOM and SwiftUI already give it — it fills the screen when the
+ * content is short (so its background covers the whole viewport) and grows
+ * past it, scrolling, when the content is tall. Null everywhere else, where
+ * weight is right and the two would fight (weight is a share of the *bounded*
+ * remainder; a min-height in a bounded Column would only overflow it).
+ */
+@Composable
+private fun ColumnScope.ColumnChildren(
+    node: GrMobNode,
+    growMinHeight: Dp? = null,
+    centreCapped: Boolean = false,
+) {
+    val stretch = isColumnStretch(node.style)
+    // No height to divide: a grow child keeps its content height, as CSS sizes
+    // a flex-grow item in an auto-height column. See LocalGrMobUnboundedHeight.
+    val unbounded = LocalGrMobUnboundedHeight.current
+    node.children.forEachIndexed { i, child ->
+        key(child.key.ifEmpty { i }) {
+            val grow = child.style?.flexGrow ?: 0f
+            var m: Modifier = when {
+                grow <= 0f -> Modifier
+                growMinHeight != null -> Modifier.heightIn(min = growMinHeight)
+                unbounded -> Modifier
+                else -> Modifier.weight(grow)
+            }
+            // The vertical half of core.FlexShrink(0); see pinMainAxis. Same
+            // condition as the Row's, and for the same reason: a weighted
+            // child's main axis is already both fixed and asked for.
+            if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = false)
+            // core.Style.AlignSelf overrides the column's verdict for this
+            // child alone (N-100). AlignSelf(start) takes a child out of the
+            // stretch and puts it at the start, as comps.Link asks so that a
+            // tap beside "Terms" is not a tap on the link; "" defers to the
+            // column. A fixed Width still exempts a self-stretched child, as
+            // CSS never stretches an item with a definite cross size.
+            val own = child.style?.alignSelf.orEmpty()
+            if (selfStretches(own, stretch) && !hugsContent(child.style)) m = m.fillMaxWidth()
+            columnSelfAlignment(own)?.let { placed ->
+                m = m.align(placed)
+                // Fit-content across, as CSS sizes an item that is not
+                // stretched. A container child would otherwise fill the
+                // column anyway, through its own stretched children
+                // (comps.Link's Box: its Text's fillMaxWidth took the whole
+                // offer), and "start" would place a box as wide as the line.
+                // The containers and the intrinsic guard are rowChildWidth's.
+                if (hugsRowOffer(child) && sizedByRow(child)) m = m.fitContentWidth()
+            }
+            // A Modal's overlay centres its content on the web
+            // (align-items: center) and SwiftUI's sheet centres a narrower
+            // VStack, so a capped child — a DatePicker card at its 360 cap in
+            // a window wider than that — belongs in the middle. A stretched
+            // Column instead puts a capped child at the start of the line
+            // (widthModifier, which is CSS's picture for a stretched item), so
+            // only a Modal asks for this. wrapContentWidth after fillMaxWidth
+            // relaxes the forced minimum for the capped content and centres
+            // what it measures; a child that does not bind its cap fills the
+            // line and the centring moves nothing.
+            if (centreCapped && child.style?.maxWidth?.isNotEmpty() == true) {
+                m = m.wrapContentWidth(Alignment.CenterHorizontally)
+                // wrapContentWidth centres only inside a minimum the parent
+                // forced, and that minimum is the fillMaxWidth above, which a
+                // child with its own Width does not get (hugsContent). Such a
+                // child, comps.ActionSheet's card at Width 100% and a caller's
+                // 520px cap, was measured at the cap and left at the start of
+                // the line: bottom-left in a landscape window (N-107, the
+                // emulator at 914dp). The column's own alignment places it
+                // instead. A child's own AlignSelf still wins.
+                if (own.isEmpty()) m = m.align(Alignment.CenterHorizontally)
+            }
+            // A grow child given the viewport as a minimum has a height its own
+            // FlexGrow children can divide, even inside a scroll's content.
+            if (grow > 0f && growMinHeight != null && unbounded) {
+                CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
+            } else {
+                RenderNode(child, m)
+            }
+        }
+    }
+}
+
+/**
+ * core.Scroll: a vertically scrolling Column.
+ *
+ * BoxWithConstraints exists to learn the viewport height before the scroll
+ * makes it unbounded, so ColumnChildren can hand a FlexGrow child a real
+ * minimum height (see its growMinHeight parameter for why weight cannot be
+ * used there). comps.Screen{Fill, Scroll} — the ordinary form-shaped
+ * screen — is exactly that shape, SafeArea → Scroll → Column(FlexGrow 1), and
+ * rendered as a blank page until this. The Box carries the node's own
+ * modifiers (the parent's weight/fill, background, padding, the keyboard
+ * inset from RenderNode) so the measured height is the region the content
+ * can actually occupy; the Column inside carries only the scroll. When the
+ * Scroll is itself unbounded (a Scroll nested in a Scroll, say) there is no
+ * viewport to fill and grow children keep wrapping their content.
+ *
+ * That last case is also why the scroll goes through verticalScrollWhenBounded.
+ * A bare verticalScroll throws when it is measured under an infinite height,
+ * so the nested Scroll the sentence above describes used to crash the screen
+ * rather than wrap; the DOM and SwiftUI both lay it out at its content height.
+ */
+@Composable
+private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
+    // core.Horizontal() turns the region on its side. It arrives as
+    // Style.FlexDirection because that is the property both DOM targets
+    // already implement it with (see core/layout.go's Horizontal), so this is
+    // the whole of the Compose half: a Row on a horizontal scroll state
+    // instead of a Column on a vertical one.
+    //
+    // No BoxWithConstraints on this branch, and no growMinHeight: the
+    // measurement it exists to take is the *viewport height* a FlexGrow child
+    // needs when the vertical axis is the unbounded one. Here the unbounded
+    // axis is horizontal, the height is whatever the parent proposes, and a
+    // grow child in a horizontal strip has no cross-axis meaning to grow
+    // into — the same reason GrMobList has no main-axis FlexGrow either.
+    //
+    // The strip scrolls through horizontalScrollWhenBounded for the same reason
+    // the column below uses the vertical helper: a strip inside another strip
+    // (or anywhere else the width is unbounded) would otherwise throw.
+    if (node.style?.flexDirection == "row") {
+        // A strip with a grower lays itself out against its viewport; see
+        // GrMobGrowStrip. Without one there is no free space to divide, and a
+        // plain Row keeps every other Row behaviour (justify, pins) as it was.
+        if (node.children.any { (it.style?.flexGrow ?: 0f) > 0f }) {
+            GrMobGrowStrip(node, extra)
+            return
+        }
+        Row(
+            node.style.boxModifier(extra).horizontalScrollWhenBounded(rememberScrollState()),
+            horizontalArrangement = packedHorizontally(node.style),
+        ) {
+            // The content is measured with no maximum width; see
+            // LocalGrMobUnboundedWidth.
+            CompositionLocalProvider(LocalGrMobUnboundedWidth provides true) {
+                RowChildren(node)
+            }
+        }
+        return
+    }
+    BoxWithConstraints(node.style.boxModifier(extra)) {
+        val viewport = if (constraints.hasBoundedHeight) maxHeight else null
+        // packedVertically, not a bare Column: a Scroll is a flex column on
+        // both web targets (it is in the runtime's STACK_CONTAINERS and
+        // htmlout emits gap for it), so core.Gap on a Scroll spaced its
+        // children in the browser and silently did nothing here. No
+        // justify-content dispatch, because a scrolling axis has no leftover
+        // space to distribute — the content defines the length.
+        Column(
+            Modifier.verticalScrollWhenBounded(rememberScrollState()),
+            verticalArrangement = packedVertically(node.style),
+        ) {
+            // The content is measured with no maximum height: true for every
+            // child below that is not handed the viewport as a minimum.
+            CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {
+                ColumnChildren(node, growMinHeight = viewport)
+            }
+        }
+    }
+}
+
+/** The width a horizontal Scroll's viewport offers, captured during measure. */
+private class StripViewport {
+    var width: Int = Constraints.Infinity
+}
+
+/**
+ * A strip child's core.FlexGrow, carried to GrMobGrowStrip's measure policy,
+ * whether its subtree can be asked for an intrinsic width (see
+ * [answersIntrinsicWidth]), and its points MinWidth in dp, or null (see
+ * "A grower with a floor" on GrMobGrowStrip).
+ */
+private data class StripGrow(val factor: Float, val intrinsic: Boolean, val floorDp: Float? = null)
+
+/** A MinWidth that is a definite length: points, not "auto" or a percentage. */
+private fun pointsMinWidth(s: GrMobStyle?): Float? {
+    val w = s?.minWidth ?: return null
+    if (w.isEmpty() || w == "auto" || w.endsWith("%")) return null
+    return w.removeSuffix("px").toFloatOrNull()?.takeIf { it > 0f }
+}
+
+/**
+ * Whether a subtree can be asked for its max intrinsic width without
+ * throwing, so GrMobGrowStrip can learn a grower's content width without
+ * measuring it.
+ *
+ * Two node types render through a SubcomposeLayout, which refuses intrinsic
+ * measurements outright: a List (GrMobList: BoxWithConstraints around a
+ * LazyColumn) and a vertical Scroll (GrMobScroll's BoxWithConstraints). A
+ * horizontal Scroll is a layout modifier that forwards intrinsics
+ * (horizontalScrollWhenBounded asks its own content the same question), and a
+ * Modal is composed in a window of its own, outside this layout. A subtree
+ * under display none is not composed, so it cannot throw either.
+ *
+ * Read off the node tree rather than tried and caught: a thrown intrinsic
+ * query leaves nothing to fall back on in the same pass, and the list of
+ * subcomposing composables is short and named in Renderer.kt itself.
+ */
+private fun answersIntrinsicWidth(node: GrMobNode): Boolean {
+    if (node.style?.display == "none" || node.type == "Modal") return true
+    if (node.type == "List") return false
+    if (node.type == "Scroll" && node.style?.flexDirection != "row") return false
+    return node.children.all { answersIntrinsicWidth(it) }
+}
+
+/**
+ * A horizontal Scroll whose content has a FlexGrow child: CSS's positive free
+ * space, divided among the growers, when the content is narrower than the
+ * viewport.
+ *
+ * # Why a Layout of its own
+ *
+ * A scroll measures its content with an infinite maximum width, so a Row
+ * inside has nothing to divide and Modifier.weight has nothing to weigh (see
+ * LocalGrMobUnboundedWidth). The viewport width exists one layer out. Two ways
+ * to bring it in were rejected:
+ *
+ *   BoxWithConstraints   a SubcomposeLayout, which refuses intrinsics, and a
+ *                        strip inside a stretched Row is asked for them
+ *   maxIntrinsicWidth    of the content, to learn its natural width: the
+ *                        content can hold a vertical Scroll, which is a
+ *                        BoxWithConstraints, and the question would crash
+ *
+ * So a layout modifier just outside the scroll records the viewport width in
+ * [StripViewport] during the measure pass, and this policy, measured inside
+ * the same pass, reads it. Every child is measured exactly once:
+ *
+ * ```
+ *   non-growers   measured unbounded             their content width
+ *   grower base   maxIntrinsicWidth              its content width, asked
+ *                                                 without measuring
+ *   free          viewport − non-growers         (0 when the viewport is
+ *                 − grower bases − gaps           unbounded or overflowed)
+ *   growers       measured with minWidth =       CSS's flex-basis: auto plus
+ *                 base + free × grow ÷ Σgrow      its share of the free space
+ *   width         Σ widths + gaps                at least the viewport when
+ *                                                 there was free space
+ * ```
+ *
+ * # Content plus share
+ *
+ * CSS grows an item from its content width, so two growers of unequal content
+ * keep that difference and split the rest. A measurement cannot give both
+ * numbers here: a child measured once for its content cannot be measured again
+ * with the share added. The intrinsic query can, because it asks without
+ * measuring, and it is the same question horizontalScrollWhenBounded already
+ * puts to a strip's content.
+ *
+ * A grower whose subtree cannot answer it (a List or a vertical Scroll inside,
+ * see [answersIntrinsicWidth]) is counted as content 0 in `free` and measured
+ * with its share as a minimum, which is `max(content, share)`: the answer a
+ * weighted Row gives on Compose, and CSS's whenever that grower's content is
+ * narrower than its share. An overflowing strip (free ≤ 0) gives every grower
+ * its content width, which is CSS's answer as well.
+ *
+ * # A grower with a floor
+ *
+ * A grower that states a points MinWidth is measured at one definite width,
+ * `max(base + share, MinWidth)`, rather than with a minimum over an infinite
+ * maximum, and its subtree is told its width is bounded again
+ * (LocalGrMobUnboundedWidth false). That is CSS's answer: a flex item's used
+ * width is a length, and its content lays out inside it. The loose measure is
+ * right for a grower whose content decides its width, and wrong for one whose
+ * content divides its width. comps.EditableGrid is the second kind: a
+ * MinWidth(460) Column of rows whose cells are FlexGrow shares. Measured
+ * loose, the floor held but every row under it was unbounded, lost its
+ * weights and hugged its own cells (lesson 4.37 on the emulator, 2026-09-22:
+ * no two rows' columns lined up). The floor is what makes the fixed width
+ * safe when the viewport is itself unbounded: there is always a length.
+ *
+ * Vertical placement follows the Row's AlignItems (top, centre, bottom), and a
+ * stretched child fills the height as in RowChildren. JustifyContent is not
+ * read: a strip with a grower has no leftover space for it to place.
+ */
+@Composable
+private fun GrMobGrowStrip(node: GrMobNode, extra: Modifier) {
+    val s = node.style
+    val viewport = remember { StripViewport() }
+    val stretch = isStretch(s)
+    Layout(
+        content = {
+            // Still measured unbounded, so a grower's own descendants keep the
+            // no-weight rule; only this strip's direct children are divided.
+            CompositionLocalProvider(LocalGrMobUnboundedWidth provides true) {
+                node.children.forEachIndexed { i, child ->
+                    key(child.key.ifEmpty { i }) {
+                        val grow = child.style?.flexGrow ?: 0f
+                        // See "A grower with a floor": only a grower that
+                        // states one is given a definite width.
+                        val floor = if (grow > 0f) pointsMinWidth(child.style) else null
+                        var m: Modifier = Modifier.layoutId(
+                            StripGrow(grow, answersIntrinsicWidth(child), floor),
+                        )
+                        if (stretch) m = m.fillMaxHeight()
+                        if (floor != null) {
+                            CompositionLocalProvider(LocalGrMobUnboundedWidth provides false) {
+                                RenderNode(child, m)
+                            }
+                        } else {
+                            RenderNode(child, m)
+                        }
+                    }
+                }
+            }
+        },
+        modifier = s.boxModifier(extra)
+            .layout { measurable, constraints ->
+                viewport.width = if (constraints.hasBoundedWidth) constraints.maxWidth else Constraints.Infinity
+                val placeable = measurable.measure(constraints)
+                layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+            }
+            .horizontalScrollWhenBounded(rememberScrollState()),
+    ) { measurables, constraints ->
+        val gap = (s?.horizontalGap ?: 0f).dp.roundToPx()
+        val gaps = gap * (measurables.size - 1).coerceAtLeast(0)
+        val loose = Constraints(maxHeight = constraints.maxHeight)
+        val grows = measurables.map { (it.layoutId as? StripGrow)?.factor ?: 0f }
+        // Each grower's content width where its subtree can say, null where it
+        // cannot; see "Content plus share".
+        val bases = measurables.mapIndexed { i, m ->
+            val intrinsic = (m.layoutId as? StripGrow)?.intrinsic ?: false
+            if (grows[i] > 0f && intrinsic) m.maxIntrinsicWidth(constraints.maxHeight) else null
+        }
+        val placeables = arrayOfNulls<Placeable>(measurables.size)
+        var fixed = 0
+        measurables.forEachIndexed { i, m ->
+            if (grows[i] <= 0f) {
+                val p = m.measure(loose)
+                placeables[i] = p
+                fixed += p.width
+            }
+        }
+        val totalGrow = grows.filter { it > 0f }.sum()
+        val growBases = bases.sumOf { it ?: 0 }
+        val free = if (viewport.width == Constraints.Infinity) 0 else viewport.width - fixed - growBases - gaps
+        measurables.forEachIndexed { i, m ->
+            if (grows[i] > 0f) {
+                val share = if (free > 0) (free * grows[i] / totalGrow).roundToInt() else 0
+                val want = (bases[i] ?: 0) + share
+                val floor = (m.layoutId as? StripGrow)?.floorDp?.dp?.roundToPx()
+                placeables[i] = if (floor != null) {
+                    val w = maxOf(want, floor)
+                    m.measure(loose.copy(minWidth = w, maxWidth = w))
+                } else {
+                    m.measure(loose.copy(minWidth = want))
+                }
+            }
+        }
+        val laid = placeables.map { it!! }
+        val width = maxOf(laid.sumOf { it.width } + gaps, constraints.minWidth)
+        val height = maxOf(laid.maxOfOrNull { it.height } ?: 0, constraints.minHeight)
+        layout(width, height) {
+            var x = 0
+            for (p in laid) {
+                val y = when (s?.alignItems) {
+                    "center" -> (height - p.height) / 2
+                    "flex-end" -> height - p.height
+                    else -> 0
+                }
+                p.placeRelative(x, y)
+                x += p.width + gap
+            }
+        }
+    }
+}
+
+/**
+ * Modifier.verticalScroll that survives an infinite maximum height.
+ *
+ * # The crash it exists for
+ *
+ * Compose's scroll container measures its content with unbounded height and
+ * sizes itself to min(content, incoming maxHeight). An incoming maxHeight that
+ * is already infinite leaves that with no answer, so ScrollingLayoutNode checks
+ * for it and throws:
+ *
+ *     IllegalStateException: Vertically scrollable component was measured
+ *     with an infinity maximum height constraints
+ *
+ * The DOM has no such rule — an `overflow: auto` box of auto height is simply
+ * as tall as its content and never scrolls — and neither does SwiftUI. So a
+ * scroll region whose parent is itself a vertical scroll was legal Go, drew in
+ * the browser and on iOS, and killed the Android app on first layout. The one
+ * that shipped: every comps.CodeEditor without a Height inside
+ * comps.Screen{Scroll: true}, which is every code block in every tutorial
+ * lesson.
+ *
+ * # What it does instead
+ *
+ *     incoming maxHeight      what the scroll is measured with
+ *     ------------------      --------------------------------
+ *     bounded                 unchanged                      (a real viewport)
+ *     infinite                content height, as a maximum   (viewport == content,
+ *                                                             so nothing to scroll)
+ *
+ * The content height comes from maxIntrinsicHeight at the width on offer,
+ * which the scroll node answers by asking its content — intrinsics never pass
+ * through the constraint check. The incoming minHeight is kept as a floor, so
+ * a FlexGrow child's heightIn(min = viewport) from ColumnChildren still holds.
+ *
+ * A layout modifier ahead of the scroll rather than BoxWithConstraints: this
+ * sits on a node that may be measured intrinsically itself (a stretched Row
+ * asks every child for IntrinsicSize.Max), and a SubcomposeLayout throws on
+ * that. A plain layout modifier forwards intrinsics untouched.
+ *
+ * The intrinsic pass costs one extra measurement of the content, and only on
+ * the unbounded branch — the bounded one, which is every screen-level scroll,
+ * measures exactly as verticalScroll alone did.
+ *
+ * mobile/verify's TestNoBareVerticalScrollOnCompose refuses a verticalScroll
+ * call anywhere in the runtime but here.
+ */
+internal fun Modifier.verticalScrollWhenBounded(state: ScrollState): Modifier =
+    layout { measurable, constraints ->
+        val bounded = if (constraints.hasBoundedHeight) {
+            constraints
+        } else {
+            val content = measurable.maxIntrinsicHeight(constraints.maxWidth)
+            constraints.copy(maxHeight = maxOf(content, constraints.minHeight))
+        }
+        val placeable = measurable.measure(bounded)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }.verticalScroll(state)
+
+/**
+ * Modifier.horizontalScroll that survives an infinite maximum width: the other
+ * axis of verticalScrollWhenBounded, with the same reasoning turned on its side.
+ *
+ * Compose's horizontal scroll container has the mirror-image check and throws
+ * "Horizontally scrollable component was measured with an infinity maximum
+ * width constraints". A width is unbounded far less often than a height,
+ * because a phone screen does not scroll sideways, so no shipped screen has hit
+ * it. It takes a sideways region inside another sideways region:
+ *
+ *     Scroll(Horizontal)              infinite width for everything in it
+ *       └─ Scroll(Horizontal)         a chip strip inside a carousel card
+ *       └─ TextGrid                   a terminal in a sideways strip
+ *       └─ CodeEditor                 its field pans in a horizontalScroll of its own
+ *
+ * The DOM lays each of those out at its content width. SwiftUI answers the
+ * vertical version of this shape with the content's height (measured on a
+ * simulator), and the sideways version is expected to match but has not been
+ * read. So each is legal Go, and on this host it killed the app on first
+ * layout (reproduced on an emulator before this helper existed): the class of
+ * crash every tutorial lesson hit on the vertical axis.
+ *
+ *     incoming maxWidth       what the scroll is measured with
+ *     -----------------       --------------------------------
+ *     bounded                 unchanged                     (a real viewport)
+ *     infinite                content width, as a maximum   (viewport == content,
+ *                                                            so nothing to scroll)
+ *
+ * The content width is maxIntrinsicWidth at the height on offer; the scroll
+ * node answers intrinsics by asking its content, which skips the check. The
+ * incoming minWidth is kept as a floor. As with the vertical helper, this is a
+ * layout modifier rather than BoxWithConstraints so that a caller measured
+ * intrinsically (a stretched Row asks every child) does not hit a
+ * SubcomposeLayout's refusal to answer intrinsics.
+ *
+ * The outer region still scrolls: it is the one with a real viewport, and the
+ * inner one reports its whole content width to it.
+ *
+ * mobile/verify's TestNoBareHorizontalScrollOnCompose refuses a horizontalScroll
+ * call anywhere in the runtime but here.
+ */
+internal fun Modifier.horizontalScrollWhenBounded(state: ScrollState): Modifier =
+    layout { measurable, constraints ->
+        val bounded = if (constraints.hasBoundedWidth) {
+            constraints
+        } else {
+            val content = measurable.maxIntrinsicWidth(constraints.maxHeight)
+            constraints.copy(maxWidth = maxOf(content, constraints.minWidth))
+        }
+        val placeable = measurable.measure(bounded)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }.horizontalScroll(state)
+
+/**
+ * Whether a container stretches its children across the cross axis.
+ *
+ * A Column with no cross-axis alignment at all stretches. That is the CSS
+ * default (`align-items: stretch`) and therefore what the two DOM targets
+ * have always drawn: an Input in a Column runs the full width of the
+ * screen in the browser, and on a phone it used to hug its placeholder
+ * because Compose's Column places children at Start unless told otherwise.
+ * Reading "unset" as stretch here brings the natives to the picture the
+ * web already shows; an explicit "flex-start" still packs. Rows keep their
+ * Top default: the same CSS rule applies to them in principle, but a
+ * stretched Row needs an intrinsic-height measurement (stretchRowHeight)
+ * with real costs inside a List, so nothing turns it on by default.
+ *
+ * Two spellings, because the Style.Align fallback is axis-dependent and this
+ * is where Android used to disagree with iOS. GrMobFlexStack in Renderer.swift
+ * reads Align as the cross-axis value only when the stack's axis is vertical —
+ * Align is a text-alignment concept and has never been read for a Row's
+ * vertical axis — so `Align(AlignStretch)` on a Column stretches on iOS and on
+ * a Row does not. Compose read `alignItems` alone in both places, so the
+ * Column case silently did nothing here while it worked there.
+ *
+ * The alignment coverage tests in mobile/verify could not have caught this and
+ * still cannot: this is an equality test, not a dispatch, so there are no arms
+ * to hold up against a list. It is the same class of bug those tests exist for
+ * and a reminder that they only reach the switches.
+ *
+ * GrMobList then repeated the Column half of that history, on both natives at
+ * once: its item loop called isStretch — the Row spelling — while its
+ * placement dispatch read the fallback, so the dispatch's "stretch" arm
+ * promised a fill the loop never applied. A List's cross axis is horizontal
+ * like a Column's, so it takes isColumnStretch. That equality is now the one
+ * stretch read a test does reach: TestListStretchFillReadsTheAlignFallback in
+ * mobile/verify pins the loop to this helper and this helper to the fallback.
+ */
+private fun isStretch(s: GrMobStyle?): Boolean = s?.alignItems == "stretch"
+
+private fun isColumnStretch(s: GrMobStyle?): Boolean =
+    (s?.alignItems?.ifEmpty { s.align }).let { it.isNullOrEmpty() || it == "stretch" }
+
+/**
+ * Whether a child of a stretched Column keeps its own width instead.
+ *
+ * Two things exempt a child from the fill, and both come from the DOM
+ * targets, which are the reference for what the default should look like:
+ *
+ *  - An explicit Width. CSS never stretches an item with a definite cross
+ *    size, and Compose would agree only by accident — fillMaxWidth ahead of
+ *    width() fixes the incoming constraints and the width is silently
+ *    ignored, so the child has to skip the fill rather than override it.
+ *  - An inline Display. The bundled themes give Button (and Badge) an inline
+ *    display as their way of saying "hug your content", and grmob-runtime.js
+ *    turns that into `width: fit-content` for exactly this case — a flex
+ *    column would otherwise spread every button across the screen.
+ *    comps.Button's FullWidth is the documented way to ask for the
+ *    stretch back (it sets both Width and a block display).
+ *
+ * Text is not exempt: a stretched Text is the same picture as a hugging one
+ * (its alignment is a text property), and stretching it is what lets
+ * Align(AlignCenter) on a Column child centre its lines.
+ */
+private fun hugsContent(s: GrMobStyle?): Boolean =
+    s != null && (s.width.isNotEmpty() || s.display == "inline" || s.display == "inline-block")
+
+/**
+ * The container half of a stretched Row.
+ *
+ * CSS stretches a row's items to the container's content height, which for an
+ * auto-height row is the tallest item. A bare fillMaxHeight on the children
+ * would instead resolve against whatever maximum the *parent* handed down —
+ * usually the whole screen — so the row has to be pinned to its tallest child
+ * first. IntrinsicSize.Max is exactly that measurement.
+ *
+ * Skipped when the style names an explicit height: that height is already the
+ * definite container size CSS would stretch against, and an intrinsic
+ * measurement would fight the frame boxModifier applies for it.
+ *
+ * Also skipped when the parent hands the row a *fixed* height: a FlexGrow
+ * child of a bounded Column is measured through weight(), whose constraints
+ * have minHeight == maxHeight. That is a definite container height too, so
+ * the children stretch against it with no intrinsic pass. The decision is
+ * made at measure time (pinToTallestUnlessFixed), because only the
+ * constraints know: `extra` is opaque here, and the same FlexGrow inside a
+ * *Row* parent sets width, where the intrinsic height is still right.
+ *
+ * Skipping it there fixed two things at once (gonotes_mobile N-021):
+ *
+ *  - A List inside such a row no longer crashes. Intrinsic measurement asks
+ *    every child for its own intrinsic height, which a lazy list cannot
+ *    answer: LazyColumn/LazyRow throw ("Asking for intrinsic measurements of
+ *    SubcomposeLayout layouts is not supported") rather than materialize
+ *    every row. comps.TwoPane is this shape (a stretched, FlexGrow Row), so
+ *    any app with a List in a pane died at launch on a wide window.
+ *  - Such a row fills its share instead of hugging the tallest child, as
+ *    the weight-derived height is no longer overridden.
+ *
+ * A List inside a stretched Row whose height is not fixed (an auto-height
+ * row, or one in a scrolled page) still throws. An explicit Height takes the
+ * early exit above.
+ */
+private fun stretchRowHeight(s: GrMobStyle?, node: GrMobNode): Modifier =
+    if (rowPinsHeight(s, node)) Modifier.pinToTallestUnlessFixed() else Modifier
+
+/**
+ * Modifier.height(IntrinsicSize.Max), except when the incoming height is
+ * already fixed, in which case the constraints pass through untouched.
+ *
+ *     incoming height       what the row is measured with
+ *     ---------------       -----------------------------
+ *     fixed (min == max)    unchanged: the parent decided (a weighted child)
+ *     anything else         its tallest child's height, kept within the
+ *                           incoming bounds, as height(IntrinsicSize.Max)
+ *
+ * A layout modifier rather than BoxWithConstraints, for the reason
+ * verticalScrollWhenBounded gives: this node can itself be measured
+ * intrinsically, and a SubcomposeLayout refuses that.
+ */
+internal fun Modifier.pinToTallestUnlessFixed(): Modifier =
+    layout { measurable, constraints ->
+        val pinned = if (constraints.hasFixedHeight) {
+            constraints
+        } else {
+            val tallest = measurable.maxIntrinsicHeight(constraints.maxWidth)
+                .coerceIn(constraints.minHeight, constraints.maxHeight)
+            constraints.copy(minHeight = tallest, maxHeight = tallest)
+        }
+        val placeable = measurable.measure(pinned)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+
+/**
+ * Whether a Row pins itself to its tallest child (stretchRowHeight): when it
+ * stretches its children (AlignItems stretch), and also when any one child
+ * stretches itself with AlignSelf(stretch) (N-100), since that child needs
+ * the same definite height to fill. comps.Discussion's thread line is the
+ * case: an empty 2px Box beside the replies, which a bare fillMaxHeight in a
+ * scrolled page left at no height at all. The caveats on stretchRowHeight
+ * apply to both triggers. An explicit Height is still the early exit.
+ */
+private fun rowPinsHeight(s: GrMobStyle?, node: GrMobNode): Boolean =
+    s?.height.isNullOrEmpty() &&
+        (isStretch(s) ||
+            // The new trigger is guarded where the old one is only documented:
+            // an intrinsic query on a List or a vertical Scroll throws
+            // (answersIntrinsicWidth; the same SubcomposeLayout refuses height
+            // queries too), and a crash is a worse answer than a line that
+            // does not stretch.
+            (node.children.any { it.style?.alignSelf == "stretch" } && answersIntrinsicWidth(node)))
+
+/**
+ * Whether one child fills the cross axis: its own AlignSelf decides when it
+ * states one, the container's verdict when it does not (CSS `align-self:
+ * auto`). The same rule as GrMobFlexSolver.selfStretches on iOS. A Column's
+ * unset-means-stretch default stays the container's: a child's explicit
+ * value never reads as unset.
+ */
+private fun selfStretches(alignSelf: String, containerStretches: Boolean): Boolean =
+    if (alignSelf.isEmpty()) containerStretches else alignSelf == "stretch"
+
+/**
+ * core.Style.AlignSelf as a Row child's vertical placement (N-100), or null
+ * to leave it to the row: for "" (defer) and for "stretch", which is a fill
+ * (RowChildren's fillMaxHeight) rather than a placement.
+ *
+ * Held to core.AlignItemsValues() by TestKotlinAlignSelfCoversEveryAlignItems
+ * in mobile/verify: one arm per line, string literals first, `else ->` last.
+ */
+private fun rowSelfAlignment(alignSelf: String): Alignment.Vertical? = when (alignSelf) {
+    "flex-start" -> Alignment.Top
+    "center" -> Alignment.CenterVertically
+    "flex-end" -> Alignment.Bottom
+    "stretch" -> null
+    else -> null
+}
+
+/**
+ * core.Style.AlignSelf as a Column child's horizontal placement (N-100), or
+ * null to leave it to the column; see rowSelfAlignment. Start and End are the
+ * layout-direction-aware pair, as the column's own alignment is.
+ *
+ * Held to core.AlignItemsValues() by TestKotlinAlignSelfCoversEveryAlignItems.
+ */
+private fun columnSelfAlignment(alignSelf: String): Alignment.Horizontal? = when (alignSelf) {
+    "flex-start" -> Alignment.Start
+    "center" -> Alignment.CenterHorizontally
+    "flex-end" -> Alignment.End
+    "stretch" -> null
+    else -> null
+}
+
+/**
+ * The virtualized sibling of GrMobColumn: LazyColumn composes only the rows
+ * on screen and recycles compositions by contentType as the user scrolls, so
+ * Go can hand over a thousand-row feed as plain data.
+ *
+ * Go's For helper wraps generated rows in a Fragment node; those wrappers are
+ * flattened here so each row is an individually recycled lazy item rather
+ * than one giant Fragment item. Keys come from the row nodes (Keyed in Go);
+ * an unkeyed row falls back to positional identity, which behaves like
+ * Column but loses row state on reorder — same contract as key() above.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GrMobList(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    // Reading node.children in composition subscribes this scope to the
+    // SnapshotStateList, so structural patches recompose the list.
+    val rows = flattenFragments(node.children)
+    // Composed outside the branch below, so the scroll position and the
+    // reporter's positional slot survive a flip between the two arms.
+    // core.StartAtEnd opens the list on its last row. Read once, by
+    // rememberLazyListState's own contract: the initial index only matters to
+    // the first composition, and after that the position is the reader's.
+    val startAtEnd = node.boolProp("startAtEnd")
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (startAtEnd) (rows.size - 1).coerceAtLeast(0) else 0,
+    )
+    EndReachedReporter(node, listState, rows.size)
+    StartReachedReporter(node, listState, rows.size)
+    StickToEnd(startAtEnd, listState, rows.size)
+
+    // The lazy sibling of GrMobColumn's dispatch, with the same contract
+    // and the same two vocabularies. Held to core.AlignItemsValues() by
+    // TestKotlinListAlignmentCoversEveryAlignItems in mobile/verify. A local
+    // rather than inline in the LazyColumn call because both arms place rows
+    // with it.
+    val rowAlignment = when (s?.alignItems?.ifEmpty { s.align }) {
+        "flex-start", "start" -> Alignment.Start
+        "center" -> Alignment.CenterHorizontally
+        "flex-end", "end" -> Alignment.End
+        // A stretched row is filled by the modifier the item loop applies,
+        // not placed by the stack. Same shape as Row and Column above.
+        "stretch" -> Alignment.Start
+        else -> Alignment.Start
+    }
+
+    // # A List with no height to be lazy in
+    //
+    // LazyColumn is a scroll container, and like verticalScroll it throws when
+    // measured under an infinite maximum height ("Vertically scrollable
+    // component was measured with an infinity maximum height constraints").
+    // A List with no Height inside a scrolled page is exactly that — the
+    // tutorial's outline demo (4.3) and both GroupedList demos (4.6) sit in
+    // comps.Screen{Scroll: true} — and the DOM draws it as a plain column of
+    // every row at content height, since a List there is a flex column with
+    // no overflow of its own.
+    //
+    //     incoming maxHeight   arm
+    //     ------------------   ---------------------------------------------
+    //     bounded              LazyColumn, as before: rows on screen composed
+    //     infinite             GrMobListAtContentHeight: every row, in a Column
+    //
+    // Laziness has nothing to save in the second case anyway: with no viewport
+    // every row is "on screen", and LazyColumn would compose them all.
+    //
+    // BoxWithConstraints is how composition learns the constraint; it is a
+    // SubcomposeLayout and so cannot answer intrinsic measurements, which a
+    // LazyColumn could not either — nothing that worked stops working.
+    //
+    // The Box carries the node's modifiers (the parent's weight or fill, size,
+    // padding, background, gestures) where the LazyColumn used to, and
+    // propagateMinConstraints hands the Box's own min/max down unchanged, so a
+    // bounded List measures exactly as it did: a fixed Height is still both
+    // bounds of the lazy list, and a wrapping List still wraps.
+    BoxWithConstraints(
+        s.boxModifier(extra, gestureModifier(node)),
+        propagateMinConstraints = true,
+    ) {
+        if (!constraints.hasBoundedHeight) {
+            GrMobListAtContentHeight(s, rows, rowAlignment)
+        } else {
+            LazyColumn(
+                state = listState,
+                verticalArrangement = verticalArrangement(s),
+                horizontalAlignment = rowAlignment,
+            ) {
+                // A hand-written loop rather than itemsIndexed, because the two kinds
+                // of row are declared with two different DSL calls: core.StickyHeader
+                // marks a child as a group band, and a band is emitted through
+                // stickyHeader {} so the lazy list pins it while its run scrolls
+                // underneath. Everything else is an ordinary item {}. itemsIndexed
+                // can only emit one kind, so it cannot express a list that has both.
+                //
+                // The key and contentType arguments are the same values itemsIndexed
+                // was deriving — row key falling back to position, node type — so row
+                // identity and view recycling are unchanged for a list with no
+                // headers in it.
+
+                // Cross-axis stretch, in the same spelling ColumnChildren uses: a
+                // List's cross axis is horizontal like a Column's, so it takes the
+                // column helper — the one that reads the Style.Align fallback. This
+                // used to call isStretch, the Row spelling that tests alignItems
+                // alone, while the placement dispatch above read the fallback:
+                // Align(AlignStretch) with AlignItems unset took the "stretch" arm,
+                // whose comment promises this modifier fills the row, and then
+                // nothing filled it. A lazy item has no weight to combine the fill
+                // with, since a lazy list's main axis is scrollable and therefore
+                // unbounded.
+                //
+                // Read here, in GrMobList itself, rather than in a helper beside
+                // rowPlacement: this is what mobile/verify's
+                // TestListStretchFillReadsTheAlignFallback anchors on, and a helper
+                // the test cannot see would hide the next drift as well as the first
+                // one hid itself.
+                val stretch = isColumnStretch(s)
+                rows.forEachIndexed { i, row ->
+                    val key = row.key.ifEmpty { i }
+                    val fill = if (stretch && !hugsContent(row.style)) {
+                        Modifier.fillMaxWidth()
+                    } else {
+                        Modifier
+                    }
+                    if (isStickyHeader(row)) {
+                        stickyHeader(key = key, contentType = row.type) {
+                            // No placement animation on a pinned header: while it is
+                            // stuck, the lazy list is positioning it itself every
+                            // frame, and an animation competing for the same offset
+                            // makes it drift. Its rows still animate.
+                            // A lazy row is measured with no maximum height,
+                            // so a Column row's FlexGrow children have
+                            // nothing to divide. See LocalGrMobUnboundedHeight.
+                            CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {
+                                RenderNode(row, fill)
+                            }
+                        }
+                    } else {
+                        item(key = key, contentType = row.type) {
+                            CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {
+                                RenderNode(row, rowPlacement(s).then(fill))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A core.List measured under an unbounded height: every row, in a plain Column,
+ * at the content's height. See "A List with no height to be lazy in" in
+ * GrMobList for when this arm is taken and why it cannot be a LazyColumn.
+ *
+ * The rows are the lazy arm's rows with the same identity and fill: keyed by
+ * row key falling back to position, and stretched across by the same
+ * isColumnStretch/hugsContent pair, so a List that changes arms between passes
+ * keeps each row's composition.
+ *
+ * Three lazy behaviours have nothing to act on here and are absent on purpose:
+ *
+ *  - core.StickyHeader. A band pins to *this* list's viewport, and this list
+ *    has none — the page around it is what scrolls. The header renders as an
+ *    ordinary row, which is also what the DOM draws for a sticky element whose
+ *    scroll container is taller than it.
+ *  - Placement animation. animateItem exists only in a lazy item scope; rows
+ *    still animate their own style under their own Transition.
+ *  - core.OnEndReached. EndReachedReporter watches the lazy state's visible
+ *    rows, which this arm never feeds, so it does not fire. An endless feed
+ *    needs a viewport to have an end — give the List a Height (the tutorial's
+ *    4.8 does).
+ */
+@Composable
+private fun GrMobListAtContentHeight(
+    s: GrMobStyle?,
+    rows: List<GrMobNode>,
+    rowAlignment: Alignment.Horizontal,
+) {
+    val stretch = isColumnStretch(s)
+    Column(
+        verticalArrangement = verticalArrangement(s),
+        horizontalAlignment = rowAlignment,
+    ) {
+        rows.forEachIndexed { i, row ->
+            key(row.key.ifEmpty { i }) {
+                val fill = if (stretch && !hugsContent(row.style)) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier
+                }
+                RenderNode(row, fill)
+            }
+        }
+    }
+}
+
+/** Whether a List child asked to be pinned; see core.StickyHeader. */
+private fun isStickyHeader(row: GrMobNode): Boolean = row.style?.position == "sticky"
+
+/**
+ * A Transition declared on the List itself animates row *placement*: keyed
+ * rows slide to their new positions on reorder/insert/removal instead of
+ * teleporting. (A Transition on a row animates that row's own property
+ * changes — two declarations, two scopes.) An extension on LazyItemScope
+ * because animateItem exists nowhere else.
+ *
+ * animateItem replaced animateItemPlacement in Compose 1.7, and it animates
+ * more than placement: by default a row also fades in when inserted and out
+ * when removed. Both fades are turned off, so a List's Transition still means
+ * what it meant under 1.6, rows sliding to their places; an appearing row
+ * that faded would be a new behaviour nobody declared.
+ */
+private fun LazyItemScope.rowPlacement(s: GrMobStyle?): Modifier =
+    if ((s?.transitionMs ?: 0) > 0) {
+        Modifier.animateItem(fadeInSpec = null, placementSpec = s!!.transitionTween(), fadeOutSpec = null)
+    } else {
+        Modifier
+    }
+
+/** How close to the last row counts as "the end" — see EndReachedReporter. */
+private const val END_REACHED_SLACK = 3
+
+/**
+ * core.OnEndReached: reports that the reader has scrolled within
+ * END_REACHED_SLACK rows of the bottom, so Go can fetch the next page.
+ *
+ * snapshotFlow over the last *visible* index rather than a scroll listener:
+ * the lazy list already maintains layoutInfo, the flow emits only when the
+ * value actually changes, and it costs nothing at all while the list sits
+ * still. The three-row slack is what makes the fetch overlap the scroll
+ * instead of following it — by the time the last row is on screen the page
+ * is already in flight.
+ *
+ * Composed unconditionally, and inert without the prop, because a composable
+ * that is called only sometimes changes the composition's shape from one pass
+ * to the next. Keyed on rows.size so the comparison re-arms against the new
+ * length after a page lands; keyed on the callback ID because it is
+ * positional and a pass can hand this list a different one.
+ *
+ * An empty list never reports the edge — there is no last row to have reached
+ * — which matches the other three renderers, where "no rows" means "no
+ * observation target" and "nothing to appear" for free. The first page is the
+ * app's to ask for; this only ever asks for the next one.
+ *
+ * Firing more than once for the same bottom is expected and is not guarded
+ * here: core.OnEndReached debounces on the Go side by remembering the row
+ * count at the last fire, which is where all four renderers' different
+ * notions of "again" are reconciled.
+ */
+@Composable
+private fun EndReachedReporter(node: GrMobNode, listState: LazyListState, rowCount: Int) {
+    val callbackId = node.stringProp("onEndReached")
+    val runtime = LocalGrMobRuntime.current
+    LaunchedEffect(listState, callbackId, rowCount) {
+        if (callbackId.isEmpty() || rowCount == 0) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .collect { last ->
+                if (last >= rowCount - END_REACHED_SLACK) runtime.click(callbackId)
+            }
+    }
+}
+
+/** How close to the first row counts as "the start" — see StartReachedReporter. */
+private const val START_REACHED_SLACK = 2
+
+/**
+ * core.OnStartReached: EndReachedReporter mirrored, reporting that the reader
+ * has scrolled to within START_REACHED_SLACK rows of the top, so Go can fetch
+ * the older page.
+ *
+ * # The place after the page lands
+ *
+ * Nothing here keeps it; LazyColumn does. A LazyListState holds its position
+ * as the first visible item's *key*, and when rows are inserted before that
+ * item it follows the key to its new index. comps.MessageThread keys every
+ * bubble, so the older page lands above the reader and the first visible index
+ * jumps by the page's size, out of this reporter's slack, which is what keeps
+ * one arrival at the top from asking for every page to the beginning. An
+ * unkeyed List falls back to index keys and would not keep its place.
+ *
+ * The slack is smaller than the bottom's three: the top is reached by
+ * scrolling back through what was read, not toward what is loading, and a
+ * thread opened at its end on a short first page must not report the top
+ * before the reader has moved at all.
+ */
+@Composable
+private fun StartReachedReporter(node: GrMobNode, listState: LazyListState, rowCount: Int) {
+    val callbackId = node.stringProp("onStartReached")
+    val runtime = LocalGrMobRuntime.current
+    LaunchedEffect(listState, callbackId, rowCount) {
+        if (callbackId.isEmpty() || rowCount == 0) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { first ->
+                if (first < START_REACHED_SLACK) runtime.click(callbackId)
+            }
+    }
+}
+
+/**
+ * core.StartAtEnd's second half: a list that was at its end when rows arrived
+ * stays at its end, so the newest message is shown to a reader who was
+ * reading the newest. A reader who has scrolled back is left where they are.
+ *
+ * "Was at its end" is remembered from the last settled layout rather than
+ * read when the rows change, because by then the layout already includes the
+ * new rows and the list is, by definition, no longer at its end.
+ */
+@Composable
+private fun StickToEnd(startAtEnd: Boolean, listState: LazyListState, rowCount: Int) {
+    val atEnd = remember { mutableStateOf(true) }
+    LaunchedEffect(listState, startAtEnd) {
+        if (!startAtEnd) return@LaunchedEffect
+        snapshotFlow { !listState.canScrollForward }.collect { atEnd.value = it }
+    }
+    LaunchedEffect(rowCount) {
+        if (startAtEnd && atEnd.value && rowCount > 0) listState.scrollToItem(rowCount - 1)
+    }
+}
+
+/** Inlines Fragment/Theme grouping nodes so their children become list rows. */
+private fun flattenFragments(children: List<GrMobNode>): List<GrMobNode> {
+    if (children.none { it.type == "Fragment" || it.type == "Theme" }) return children
+    val out = ArrayList<GrMobNode>(children.size)
+    for (child in children) {
+        if (child.type == "Fragment" || child.type == "Theme") {
+            out.addAll(flattenFragments(child.children))
+        } else {
+            out.add(child)
+        }
+    }
+    return out
+}
+
+/**
+ * core.JustifyContents -> Compose Arrangement, on each axis.
+ *
+ * Both are held to core.JustifyContents() by
+ * TestKotlinArrangementsCoverEveryJustifyContent in mobile/verify, which
+ * parses these arms: one per line, string literals first, `else ->` last. The
+ * "flex-start" arm duplicates `else`'s body and stays spelled out — an
+ * unlisted value here does not fall back to some neutral arrangement, it packs
+ * to the start, which is a rendering and not an abstention.
+ *
+ * The gap survives every value. CSS treats gap as a minimum that
+ * justify-content then adds to, and the iOS solver does the same (it carries
+ * `spacing` separately from `justify`). Compose's Arrangement.Center and
+ * friends take no spacing argument, so each arm picks a gapped form when the
+ * container has a gap:
+ *
+ *   center / flex-end            Arrangement.spacedBy(gap, alignment)
+ *   space-between/around/evenly  GappedDistribution (below): gap first, then
+ *                                the free space shared out as CSS shares it
+ *
+ * Until 2026-09-16 those five dropped the gap on this target alone — lesson
+ * 4.20's centred donut and gauge touched on Android and sat 16 px apart on the
+ * web and iOS.
+ */
+private fun horizontalArrangement(s: GrMobStyle?): Arrangement.Horizontal =
+    when (s?.justifyContent) {
+        "flex-start" -> packedHorizontally(s)
+        "center" -> if (hGap(s) > 0f) Arrangement.spacedBy(hGap(s).dp, Alignment.CenterHorizontally) else Arrangement.Center
+        "flex-end" -> if (hGap(s) > 0f) Arrangement.spacedBy(hGap(s).dp, Alignment.End) else Arrangement.End
+        "space-between" -> if (hGap(s) > 0f) GappedDistribution(hGap(s).dp, Distribute.Between) else Arrangement.SpaceBetween
+        "space-around" -> if (hGap(s) > 0f) GappedDistribution(hGap(s).dp, Distribute.Around) else Arrangement.SpaceAround
+        "space-evenly" -> if (hGap(s) > 0f) GappedDistribution(hGap(s).dp, Distribute.Evenly) else Arrangement.SpaceEvenly
+        else -> packedHorizontally(s)
+    }
+
+private fun verticalArrangement(s: GrMobStyle?): Arrangement.Vertical =
+    when (s?.justifyContent) {
+        "flex-start" -> packedVertically(s)
+        "center" -> if (vGap(s) > 0f) Arrangement.spacedBy(vGap(s).dp, Alignment.CenterVertically) else Arrangement.Center
+        "flex-end" -> if (vGap(s) > 0f) Arrangement.spacedBy(vGap(s).dp, Alignment.Bottom) else Arrangement.Bottom
+        "space-between" -> if (vGap(s) > 0f) GappedDistribution(vGap(s).dp, Distribute.Between) else Arrangement.SpaceBetween
+        "space-around" -> if (vGap(s) > 0f) GappedDistribution(vGap(s).dp, Distribute.Around) else Arrangement.SpaceAround
+        "space-evenly" -> if (vGap(s) > 0f) GappedDistribution(vGap(s).dp, Distribute.Evenly) else Arrangement.SpaceEvenly
+        else -> packedVertically(s)
+    }
+
+/**
+ * Children packed against the start edge, which is what flex-start asks for
+ * and also what an absent or unrecognized JustifyContent gets.
+ *
+ * Extracted so the explicit "flex-start" arm and the `else` arm above can
+ * share one body rather than repeat it: the body is not a bare Arrangement,
+ * because this is the one path where Style.Gap survives (see the divergence
+ * note above), and two copies of that conditional would be two chances to
+ * change only one of them.
+ */
+private fun packedHorizontally(s: GrMobStyle?): Arrangement.Horizontal =
+    if ((s?.horizontalGap ?: 0f) > 0f) Arrangement.spacedBy(s!!.horizontalGap.dp) else Arrangement.Start
+
+private fun packedVertically(s: GrMobStyle?): Arrangement.Vertical =
+    if ((s?.verticalGap ?: 0f) > 0f) Arrangement.spacedBy(s!!.verticalGap.dp) else Arrangement.Top
+
+private fun hGap(s: GrMobStyle?): Float = s?.horizontalGap ?: 0f
+
+private fun vGap(s: GrMobStyle?): Float = s?.verticalGap ?: 0f
+
+/** How [GappedDistribution] shares the free space, named for justify-content. */
+private enum class Distribute { Between, Around, Evenly }
+
+/**
+ * space-between / space-around / space-evenly with a minimum gap, which no
+ * built-in Arrangement expresses. The gap is laid down first; whatever main
+ * axis is still free is then shared out exactly as CSS does:
+ *
+ *   free  = total − Σ sizes − gap·(n−1)        (never negative)
+ *   Between  lead 0,        each gap + free/(n−1)   (n = 1 → packed to start)
+ *   Around   lead free/2n,  each gap + free/n
+ *   Evenly   lead free/(n+1), each gap + free/(n+1)
+ *
+ *   Evenly, n = 3:  │·e·[a]·gap+e·[b]·gap+e·[c]·e·│
+ *
+ * Positions accumulate as floats and are rounded once each, so rounding does
+ * not drift the last child off the end edge. `spacing` reports the gap, which
+ * is what FlowRow and intrinsic measurement use to size the minimum line.
+ *
+ * Right-to-left mirrors the left-to-right placement (a child's start becomes
+ * total − start − size), which is what the built-in horizontal arrangements do
+ * and keeps the first child at the start edge, now the right one.
+ */
+private class GappedDistribution(
+    private val gap: Dp,
+    private val mode: Distribute,
+) : Arrangement.HorizontalOrVertical {
+    override val spacing: Dp get() = gap
+
+    override fun Density.arrange(
+        totalSize: Int,
+        sizes: IntArray,
+        layoutDirection: LayoutDirection,
+        outPositions: IntArray,
+    ) {
+        place(gap.toPx(), totalSize, sizes, outPositions)
+        if (layoutDirection == LayoutDirection.Rtl) {
+            for (i in sizes.indices) outPositions[i] = totalSize - outPositions[i] - sizes[i]
+        }
+    }
+
+    override fun Density.arrange(totalSize: Int, sizes: IntArray, outPositions: IntArray) {
+        place(gap.toPx(), totalSize, sizes, outPositions)
+    }
+
+    private fun place(gapPx: Float, totalSize: Int, sizes: IntArray, out: IntArray) {
+        val n = sizes.size
+        if (n == 0) return
+        val free = (totalSize - sizes.sum() - gapPx * (n - 1)).coerceAtLeast(0f)
+        val (lead, extra) = when (mode) {
+            Distribute.Between -> 0f to (if (n > 1) free / (n - 1) else 0f)
+            Distribute.Around -> free / (2 * n) to free / n
+            Distribute.Evenly -> free / (n + 1) to free / (n + 1)
+        }
+        var at = lead
+        for (i in 0 until n) {
+            out[i] = Math.round(at)
+            at += sizes[i] + gapPx + extra
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Composite components
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun GrMobTabView(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val selected = node.intProp("selectedIndex")
+    val onTabChange = node.stringProp("onTabChange")
+
+    @Suppress("UNCHECKED_CAST")
+    val tabs = node.props["tabs"] as? List<Map<String, Any?>> ?: emptyList()
+
+    Column(node.style.boxModifier(extra)) {
+        TabRow(selectedTabIndex = selected.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))) {
+            tabs.forEachIndexed { i, tab ->
+                Tab(
+                    selected = i == selected,
+                    onClick = { if (onTabChange.isNotEmpty()) runtime.intChanged(onTabChange, i) },
+                    text = { Text(tab["label"] as? String ?: "") },
+                )
+            }
+        }
+        // Go renders every tab's content as a child; selection is presentation
+        // state, so only the selected child is composed. key() on the index
+        // gives each tab its own composition identity, so per-tab state (input
+        // text, scroll) is dropped on switch — matching the replace semantics
+        // the Go reconciler would apply anyway.
+        node.children.getOrNull(selected)?.let { current ->
+            key(selected) { RenderNode(current) }
+        }
+    }
+}
+
+/**
+ * Modal as a Compose Dialog — the Android idiom for what iOS presents as a
+ * sheet.
+ *
+ * The Dialog window is what makes this target need no dialog role: it is a
+ * separate window, so TalkBack announces it as a dialog and confines
+ * exploration to it. The two DOM renderers have no such window and write
+ * role="dialog" plus aria-modal onto the overlay div instead (htmlout's
+ * modalSemantics), which is why core.Role has no RoleDialog for an author to
+ * set — see core/role.go, "Roles a node type carries for itself".
+ */
+@Composable
+private fun GrMobModal(node: GrMobNode) {
+    if (!node.boolProp("visible")) return
+    val runtime = LocalGrMobRuntime.current
+    val onDismiss = node.stringProp("onDismiss")
+    // Whose width the dialog is: the platform's, or the content's own.
+    //
+    // A Dialog window defaults to the platform's dialog width — 320dp on a
+    // phone, in portrait and landscape alike — and nothing inside the window
+    // can be wider than it. That is the right width for content that says
+    // nothing about its own (a confirm card, a link prompt), and it matches
+    // the compact dialog Android users expect. It is wrong for content that
+    // declared a width, because the declaration then silently loses:
+    //
+    //     child declares         web / iOS              Android, platform width
+    //     --------------         ---------              -----------------------
+    //     Width("100%")          edge to edge sheet     a 320dp floating card
+    //     MaxWidth("360px")      card reaches 360       card stops at ~304
+    //
+    // (comps.ActionSheet and comps.DatePicker, measured on the emulator.) So a
+    // direct child that declares Width or MaxWidth opts the window out of the
+    // platform width: the window spans the screen and the child's own
+    // declaration decides. MinWidth does not opt out — it is a floor, which the
+    // platform width already clears, not a claim on the whole width.
+    val sizesItself = node.children.any { c ->
+        c.style?.let { it.width.isNotEmpty() || it.maxWidth.isNotEmpty() } == true
+    }
+    Dialog(
+        onDismissRequest = { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) },
+        properties = DialogProperties(usePlatformDefaultWidth = !sizesItself),
+    ) {
+        // Escape closes the Modal as back does (core.OnEscape).
+        DialogEscape { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) }
+        // The dialog is its own window and Compose view, so it needs its own
+        // watcher (N-058). Opened from the keyboard, Compose focuses its first
+        // control, and TalkBack heard it only from the watcher's retry.
+        AnnounceFocusMovesToScreenReader()
+        // The dialog window already scrims with the backdrop; the content gets
+        // a card-like surface unless the app styled its children explicitly.
+        //
+        // "Explicitly" is read as: a direct child carries a background. The
+        // DOM targets draw a Modal as the backdrop and nothing else — the
+        // app's content paints its own surface — so an app that gave its
+        // dialog column a dark background has already drawn the card, and
+        // the white one here used to show around it as a frame. When the
+        // app has painted, this layer paints nothing and pads nothing, so
+        // the app's surface is the dialog's edge on every target; when it
+        // has not, the default card keeps unstyled content legible over the
+        // scrim. The 8dp outer margin stays in both cases: it is the gap to
+        // the window edge, not part of the surface.
+        val styled = node.children.any { it.style?.background != null }
+        val surface = if (styled) {
+            Modifier
+        } else {
+            Modifier
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .padding(16.dp)
+        }
+        // Content taller than the window scrolls; content that fits lays out
+        // exactly as it did.
+        //
+        // The Dialog window is as tall as the screen allows and no taller, and
+        // this Column used to have no scroll: on a landscape phone a
+        // DatePicker's sheet was cut off after its third week with no way to
+        // reach the rest. The scroll sits inside the surface, so an unstyled
+        // dialog's white card stays put and its content moves within it.
+        //
+        // The one layout that needed care is a child that grows —
+        // comps.ActionSheet's filler, weighted so the card lands on the
+        // window's bottom edge. A scroll measures its content with an
+        // unbounded height, where a weight has nothing to divide. So when a
+        // child grows the content is given a minimum height of the viewport
+        // (read by BoxWithConstraints before the scroll unbounds it): a Column
+        // whose maximum is infinite divides its *minimum* among weights, so
+        // the filler still takes whatever the card leaves, and a card taller
+        // than the window leaves the filler nothing and scrolls.
+        //
+        //     children          content fits              content taller
+        //     --------          ------------              --------------
+        //     none grow         wraps, window centred     scrolls
+        //     one grows         fills window, as before   filler 0, scrolls
+        //
+        // The minimum is not applied when nothing grows: it would stretch
+        // every centred dialog to the full window height, and paint an
+        // unstyled one's white surface all the way down.
+        //
+        // heightIn after the scroll, not before: modifiers after
+        // verticalScrollWhenBounded constrain the scrolled content, which is
+        // what the weights read; before it they would size the viewport.
+        val grows = node.children.any { (it.style?.flexGrow ?: 0f) > 0f }
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .then(surface)
+        ) {
+            val viewport = if (constraints.hasBoundedHeight) maxHeight else null
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScrollWhenBounded(rememberScrollState())
+                    .then(if (grows && viewport != null) Modifier.heightIn(min = viewport) else Modifier)
+            ) {
+                // The column scrolls, so it has no maximum; it has a height to
+                // divide only when a growing child made the window its minimum.
+                // A Dialog is a fresh window, so the page's own local is not
+                // what applies here. See LocalGrMobUnboundedHeight.
+                CompositionLocalProvider(LocalGrMobUnboundedHeight provides !(grows && viewport != null)) {
+                    ColumnChildren(node, centreCapped = true)
+                }
+            }
+        }
+    }
+}

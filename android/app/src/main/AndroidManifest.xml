@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Image nodes load remote sources via Coil, and core.MapView fetches
+         OpenStreetMap tiles through osmdroid. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- osmdroid checks the network state before it asks for a tile, so that a
+         map on a disconnected device draws what it has cached instead of
+         queueing requests that cannot complete. It is a normal permission:
+         granted at install, never prompted, and absent it the library logs and
+         draws a blank grid. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- core.Haptic (app/Haptics.kt) drives the Vibrator service, which throws
+         SecurityException without this rather than staying silent. A normal
+         permission: granted at install, never prompted, so it is not a
+         permission.Permission. mobile/verify's TestTheAndroidShellDeclaresVibrate
+         holds this line in place. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- core's audio service (GrMobAudioService): a foreground service of
+         the mediaPlayback type is what keeps a stream playing with the app
+         in the background and puts the player on the lock screen; Android
+         14 rejects startForeground without the typed permission. WAKE_LOCK
+         lets ExoPlayer hold the CPU and radio while playing with the screen
+         off. POST_NOTIFICATIONS (declared further down)
+         is for core's own notifications: a MediaSession's notification is
+         exempt from it, so playback does not wait on that answer. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Go's permission package (app/Permissions.kt). A runtime permission
+         that is not declared here is never granted and never prompts:
+         requestPermissions returns DENIED immediately with nothing on screen.
+         One entry per permission.Permission constant, and Permissions.declared
+         reports a missing one as "unavailable" rather than "denied", since it
+         is a build-time fact no user can fix in Settings.
+
+         READ_MEDIA_IMAGES is Android 13's replacement for the storage read;
+         READ_EXTERNAL_STORAGE stays for older releases, capped with
+         maxSdkVersion so 13+ does not carry a permission it stopped granting.
+         Location asks for the coarse permission alone — see the note in
+         permission.Location on why one Go constant means the narrower thing on
+         every platform. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Declaring CAMERA implies android.hardware.camera is *required*, and a
+         store then hides the app from devices without one (Chromebooks, some
+         tablets). The camera is one permission among several that an app may
+         or may not use, so the feature is declared optional; a device with no
+         camera answers permission.Camera itself. Lint's
+         PermissionImpliesUnsupportedChromeOsHardware. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- permission.Notifications, which core.PostNotification needs
+         (app/Notifications.kt). A runtime permission from Android 13; earlier
+         releases have no such permission and ignore the line, so it is
+         declared unconditionally rather than with a minSdkVersion. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A core.LocalNotification with At is an AlarmManager alarm
+         (app/Notifications.kt). Exact alarms need this on Android 12+, and
+         Android 14+ does not grant it to new installs by default, so the shell
+         checks canScheduleExactAlarms() and falls back to an inexact alarm
+         rather than failing. USE_EXACT_ALARM, which is granted, is reserved by
+         Play policy for apps whose core function is an alarm clock or
+         calendar — that is the adopting app's call, not the framework's. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Lets NotificationBootReceiver re-arm scheduled notifications after a
+         reboot. A normal permission: granted at install, never prompted. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- enableOnBackInvokedCallback opts in to predictive back: on Android 13+
+         a back gesture previews its destination (the home screen, from the
+         root frame) instead of committing blind. Every back handler in the
+         shell is androidx's, which supports it: core.OnBack's BackHandler
+         (Renderer.kt) and Compose's Dialog for a Modal. A key-event or
+         onBackPressed override would stop being called under this flag, and
+         there is none.
+
+         Theme.GrMob is the platform's light Material theme with force dark
+         switched off for the window; see res/values/themes.xml. -->
+    <!-- GrMobApplication configures Coil's image loader with a descriptive
+         User-Agent; image hosts with a robot policy (Wikimedia) refuse
+         OkHttp's default one. See GrMobApplication.kt. -->
+    <application
+        android:name="com.grmob.app.GrMobApplication"
+        android:enableOnBackInvokedCallback="true"
+        android:label="Cat Adoption"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.GrMob">
+        <!-- adjustResize, not the platform's unspecified default: with the
+             activity edge to edge (MainActivity.enableEdgeToEdge) the keyboard
+             has to arrive as a window inset the composition can read, which is
+             what core.KeyboardAware turns into padding on a scroll region.
+             Under adjustPan the platform slides the whole window instead and
+             nothing downstream can tell the keyboard is there.
+
+             singleTop for the deep link below: without it a link arriving
+             while the app is already running starts a SECOND MainActivity on
+             the back stack. The Go side is a process-wide singleton so nothing
+             breaks, but the user gets two of the same screen and a back press
+             that appears to do nothing. With it, the intent is delivered to
+             the running Activity's onNewIntent instead. -->
+        <activity
+            android:name=".MainActivity"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The inbound half of core.OpenURL: a URL the OS hands this app,
+                 forwarded to Go as the "deeplink" host event and parsed there
+                 (see core/deeplink.go on why the shell does not parse it).
+                 BROWSABLE is what lets a link in another app open this one;
+                 DEFAULT is what makes this activity a candidate for an
+                 implicit VIEW at all.
+
+                 A private scheme rather than an https host, deliberately. An
+                 App Link on a real domain is verified against a file served
+                 from it, which is a deployment an adopting app owns and this
+                 framework shell cannot have; a scheme needs nothing and is
+                 enough for the job. An app shipping to users should add its
+                 own verified https filter beside this rather than instead of
+                 it — a custom scheme is claimable by any other app, so it is
+                 a convenience and not a trust boundary.
+
+                 It is also how a device run reaches a screen without
+                 scrolling to it:
+                   adb shell am start -a android.intent.action.VIEW
+                     -d "com.rohanthewiz.catadopt://"
+
+                 The action is spelled out rather than left to `am` to infer:
+                 an intent with no action is matched by component and reaches
+                 MainActivity with a null action, which reportDeepLink drops.
+                 The app then opens at its front door and the link looks like
+                 it was ignored. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.rohanthewiz.catadopt" />
+            </intent-filter>
+        </activity>
+
+        <!-- The audio player's host. The intent filter is how a
+             MediaController locates the session (AudioPlayer connects by
+             SessionToken); exported so the system's media controls — the
+             lock screen, a headset, Android Auto — can bind to it too. -->
+        <service
+            android:name=".GrMobAudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Posts a scheduled core.LocalNotification when its alarm fires,
+             including into a process the system started for it. Not exported:
+             only this app's own PendingIntents reach it. -->
+        <receiver
+            android:name=".NotificationAlarmReceiver"
+            android:exported="false" />
+
+        <!-- Re-arms scheduled notifications after a reboot or an update, both
+             of which clear AlarmManager (Notifications.kt keeps the list), and
+             after exact alarms are granted, which turns inexact ones exact.
+             Exported because the system sends these broadcasts from outside
+             the app; the receiver ignores every other action. -->
+        <receiver
+            android:name=".NotificationBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

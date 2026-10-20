@@ -52,6 +52,7 @@ func profileScreen(ctx *core.Context, c Cat, requested core.State[map[string]boo
 
 	return comps.Screen{
 		Scroll: true,
+		Fill:   true, // full-height Surface; see galleryScreen
 		Gap:    float64(th.Spacing.MD),
 		// Surface, as on the gallery screen (see there for why).
 		Style: []core.StyleProp{core.BackgroundColor(th.Colors.Surface)},
