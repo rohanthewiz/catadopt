@@ -53,11 +53,13 @@ func profileScreen(ctx *core.Context, c Cat, requested core.State[map[string]boo
 	return comps.Screen{
 		Scroll: true,
 		Gap:    float64(th.Spacing.MD),
-		Style:  []core.StyleProp{core.BackgroundColor(th.Colors.Background)},
+		// Surface, as on the gallery screen (see there for why).
+		Style: []core.StyleProp{core.BackgroundColor(th.Colors.Surface)},
 		Children: []core.View{
 			// The back button is automatic: AppBar draws it whenever
 			// core.CanPop is true, and it pops by default.
-			comps.AppBar{Title: c.Name},
+			comps.AppBar{Title: c.Name,
+				Style: []core.StyleProp{core.BackgroundColor(th.Colors.Surface)}},
 			// Placed straight in the Screen's column, which already carries
 			// the theme's inset, so the photo lines up with the text below.
 			core.ImageWithMode(photoURL(c.Photo), core.ContentModeFill,

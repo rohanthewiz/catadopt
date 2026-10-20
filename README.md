@@ -4,8 +4,8 @@ A [GrMob](https://github.com/rohanthewiz/grmob) app: views, state and logic in
 Go, rendered in the browser through WebAssembly and natively on Android and
 iOS from the same package.
 
-Browse cats up for adoption, one large card at a time (`comps.Gallery`, dark
-mode). Each card shows the cat's name, age and a short description:
+Browse cats up for adoption, one large card at a time (`comps.Gallery`, warm
+AmberTheme). Each card shows the cat's name, age and a short description:
 
 - tap the middle of the photo for the cat's info (age, coat, good with,
   vaccinated, spayed/neutered, fee); tap its edges to step between cats;
@@ -62,7 +62,7 @@ The launcher name and application ID come from `grmob.json`.
 
 ```
 app/          the app (every target mounts this):
-  app.go              root view: DarkTheme + Navigator, adoption-request state
+  app.go              root view: appTheme (AmberTheme) + Navigator, adoption-request state
   cats.go             the Cat record and the sample catalogue
   gallery_screen.go   home screen: the Gallery of cats
   profile_screen.go   one cat's profile and the adoption request

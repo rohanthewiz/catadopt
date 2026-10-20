@@ -22,18 +22,26 @@ func init() {
 // from the native library and the shell would start with no app.
 func AppName() string { return "Cat Adoption" }
 
+// appTheme is the whole app's palette, kept in one place so a change of look
+// is one line. AmberTheme is grmob's bundled warm theme: an amber brand
+// colour, amber-tinted surfaces and brown ink on its filled controls, over a
+// white page. (The app shipped on core.DarkTheme first.) The screens read
+// every colour from ctx.Theme(), so nothing else names a palette, apart from
+// wasm/index.html's frame, which can't read Go and restates the page colour.
+var appTheme = core.AmberTheme
+
 // App is called again on every render pass: it reads state, returns a tree,
 // and never mutates the screen itself.
 //
-//	App ── WithTheme(DarkTheme)
+//	App ── WithTheme(appTheme)
 //	        └ Navigator
 //	            ├ galleryScreen   (root route: the Gallery of cats)
 //	            └ profileScreen   (pushed by a card's "Meet <name>" action)
 //
-// Dark mode is applied here, in the view tree, rather than by handing the
+// The theme is applied here, in the view tree, rather than by handing the
 // host a themed context (wasm/main.go's webhost.Run(nil, …)). The tree is
-// what every target shares, so this one line makes Android, iOS and the
-// browser all dark; a host-side theme would have to be repeated per shell.
+// what every target shares, so this one line themes Android, iOS and the
+// browser alike; a host-side theme would have to be repeated per shell.
 func App(ctx *core.Context) core.View {
 	// State that outlives a screen lives above the Navigator: the profile
 	// route is discarded on Pop, but a request made there should still show
@@ -41,12 +49,12 @@ func App(ctx *core.Context) core.View {
 	requested := core.NewState(ctx, map[string]bool{})
 	cats := catalogue()
 
-	return core.WithTheme(core.DarkTheme,
+	return core.WithTheme(appTheme,
 		core.Navigator(func(frame *core.Context) core.View {
 			// The route captures the App's state rather than declaring its
 			// own, so nothing is lost when frames come and go. It is handed
 			// the frame context, not the App's: the frame is a scope of the
-			// themed context, so frame.Theme() is DarkTheme, whereas the
+			// themed context, so frame.Theme() is appTheme, whereas the
 			// App's ctx sits outside WithTheme and still reports the
 			// default theme. Navigation works from either (they share one
 			// route stack).

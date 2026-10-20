@@ -46,19 +46,19 @@ func TestGalleryShowsEveryCat(t *testing.T) {
 	assertNoConcerns(t)
 }
 
-// TestDarkMode checks the screen is painted with DarkTheme's background,
-// both on the safe area (the status-bar strip on the natives) and on the
-// screen column.
-func TestDarkMode(t *testing.T) {
+// TestAppTheme checks the screen is painted with appTheme's Surface on the
+// safe area (the status-bar strip on the natives), which proves the theme
+// reaches the routes: they read it from the frame context, not the App's.
+func TestAppTheme(t *testing.T) {
 	core.ClearConcerns()
 	mgr := render.New(core.NewContext(), App)
 	defer mgr.Close()
 
-	want := core.DarkTheme.Colors.Background
+	want := appTheme.Colors.Surface
 	root := tree(t, mgr)
 	sa := find(root, func(n *node) bool { return n.Type == "SafeArea" })
 	if sa == nil || sa.Style["Background"] != want {
-		t.Fatalf("safe area background = %v, want DarkTheme's %s", sa.Style["Background"], want)
+		t.Fatalf("safe area background = %v, want appTheme's Surface %s", sa.Style["Background"], want)
 	}
 	assertNoConcerns(t)
 }

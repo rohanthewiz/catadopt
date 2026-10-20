@@ -60,14 +60,19 @@ func galleryScreen(ctx *core.Context, cats []Cat, requested core.State[map[strin
 		// screen scroll for the same drag.
 		Scroll: true,
 		Gap:    float64(th.Spacing.SM),
-		// Screen paints no background of its own; stating the theme's here
-		// also paints the safe-area inset, so the status-bar strip is dark
-		// on the natives too.
-		Style: []core.StyleProp{core.BackgroundColor(th.Colors.Background)},
+		// Screen paints no background of its own; stating one here also
+		// paints the safe-area inset, so the status-bar strip matches on the
+		// natives too. Surface rather than Background: AmberTheme keeps its
+		// page and cards white and puts its warmth in Surface (amber 50), so
+		// a white card on a Surface page is what makes the screen read warm.
+		Style: []core.StyleProp{core.BackgroundColor(th.Colors.Surface)},
 		Children: []core.View{
 			comps.AppBar{
 				Title:    "Cat Adoption",
 				Subtitle: fmt.Sprintf("%d cats looking for a home", len(cats)),
+				// The bar's own fill is the theme's white, which on a Surface
+				// screen draws as a stray band inside the screen's inset.
+				Style: []core.StyleProp{core.BackgroundColor(th.Colors.Surface)},
 			},
 			core.Text("Tap a photo for info · tap its edges to browse",
 				core.UseStyle(th.Typography.Caption),

@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cat Adoption</title>
-<!-- The app ships its own dark theme, so tell the Dark Reader extension to
-     leave the page alone. In its filter mode it inverts the page (turning
-     this dark UI light) and re-inverts every <img> with a CSS filter; a
-     filtered element paints above its unpositioned siblings, which put each
-     Gallery photo on top of its caption band. -->
+<!-- The app ships its own theme, so tell the Dark Reader extension to leave
+     the page alone. In its filter mode it inverts the page and re-inverts
+     every <img> with a CSS filter; a filtered element paints above its
+     unpositioned siblings, which put each Gallery photo on top of its
+     caption band. -->
 <meta name="darkreader-lock">
 <style>
   /* The page is a frame around the app. On a phone-width screen the app takes
@@ -16,18 +16,19 @@
      layout is judged at the width it will ship at rather than at 1400px. */
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  /* Dark mode: the app renders under core.DarkTheme (see app/app.go), so the
-     page around it and the screen behind the first frame match it (#1C1C1E
-     is DarkTheme's Background); a white frame would flash before boot. */
-  html { color-scheme: dark; }
+  /* Warm theme: the app renders under core.AmberTheme (appTheme in
+     app/app.go). The screen behind the first frame matches the colour the
+     screens paint (#FFF8E1, AmberTheme's Surface) so nothing flashes before
+     boot, and the page around it is a deeper sand so the phone frame reads. */
+  html { color-scheme: light; }
   body {
-    background: #0d0d0f; font: 14px/1.45 system-ui, sans-serif;
+    background: #EFE3C8; font: 14px/1.45 system-ui, sans-serif;
     display: flex; align-items: center; justify-content: center;
   }
   .screen {
     position: relative; width: 100%; max-width: 430px; height: 100%; max-height: 900px;
-    background: #1C1C1E; color: #ffffff; overflow: hidden;
-    box-shadow: 0 10px 40px rgba(0,0,0,.6); border-radius: 18px;
+    background: #FFF8E1; color: #1C1B1F; overflow: hidden;
+    box-shadow: 0 10px 40px rgba(93,64,55,.25); border-radius: 18px;
     /* Makes the screen the containing block for position:fixed descendants
        (core.Modal's overlay), so a modal dims the app rather than the page. */
     transform: translateZ(0);
@@ -87,7 +88,7 @@
 
   .boot {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: #98989f; padding: 1.5rem; text-align: center;
+    color: #616161; padding: 1.5rem; text-align: center;
   }
   .boot.err {
     color: #9b1c32; background: #fdeef0; align-items: flex-start; justify-content: flex-start;
